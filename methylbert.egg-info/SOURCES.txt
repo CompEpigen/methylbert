@@ -1,0 +1,9 @@
+setup.py
+methylbert/__init__.py
+methylbert/network.py
+methylbert/trainer.py
+methylbert/utils.py
+methylbert.egg-info/PKG-INFO
+methylbert.egg-info/SOURCES.txt
+methylbert.egg-info/dependency_links.txt
+methylbert.egg-info/top_level.txt
