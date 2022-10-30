@@ -113,6 +113,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
 
         # get all reads overlapping with chromo:start-end
         fetched_reads = aln.fetch(chromo, start, end, until_eof=True)
+        processed_reads = list()
         for reads in fetched_reads:
             ref_seq = dict_ref[chromo][reads.pos:(reads.pos+reads.query_alignment_end)].upper() # Remove case-specific mode occured by the quality
             xm_tag = reads.get_tag("XM")
@@ -164,11 +165,23 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
             ref_seq = ref_seq.replace("I", "")
             ref_seq = ref_seq.replace("S", "")
 
-            seq_list.append(ref_seq)
-            dna_seq.append(reads.query_sequence)
-            xm_tags.append(xm_tag)
-            
-        return seq_list, dna_seq, xm_tags
+
+            # K-mers
+            s, m = kmers(ref_seq, k=3)
+
+            if len(s) != len(m):
+                raise ValueError("DNA and methylation sequences have different length (%d and %d)"%(len(s), len(m)))
+
+            # Add processed results as a tag
+            reads.setTag("RF", value=" ".join(s), replace=True)
+            reads.setTag("ME", value="".join(m), replace=True)
+
+            read_tags = {t:v for t, v in reads.get_tags()}
+            reads = reads.to_dict()
+            reads.update(read_tags)
+            processed_reads.append(reads)
+        
+        return pd.DataFrame(processed_reads).drop(columns=["tags"])
         
     @globalize
     def _get_methylseq(dmr, bam_file_path, k, single_end):
@@ -187,44 +200,21 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
                         if "-2" in p:
                             single_end = False
 
-        seqs, dna_seq, xm_tags = _reads_overlapping(aln, dmr["chr"], int(dmr["start"]), int(dmr["end"]), single_end)
+        processed_reads = _reads_overlapping(aln, dmr["chr"], int(dmr["start"]), int(dmr["end"]), single_end)
 
-        # Kmers
-        binary_seqs = list()
-        methyl_seqs = list()
-        for b in seqs:
-            s, m = kmers(b, k=k)
+        processed_reads["ctype"] = dmr["ctype"]
+        processed_reads["dmr_id"] = dmr["dmr_id"]
 
-            if len(s) != len(m):
-                raise ValueError("DNA and methylation sequences have different length (%d and %d)"%(len(s), len(m)))
-
-            binary_seqs.append(" ".join(s))
-            methyl_seqs.append("".join(m))
-
-
-        return (binary_seqs, 
-                [dmr["ctype"] for i in range(len(binary_seqs))], 
-                methyl_seqs, 
-                [dmr["dmr_id"] for i in range(len(binary_seqs))],
-                dna_seq,
-                xm_tags)
-    '''
-    seqs = [_get_methylseq(bam_file_path = bam_file_path,  dmr= dmr, k=k) for dmr in dmrs.to_dict("records")]
-    '''
+        return processed_reads
+    
     with mp.Pool(ncores) as pool:
         # Convert sequences to K-mers
         seqs = pool.map(partial(_get_methylseq, 
                                 bam_file_path = bam_file_path, 
-                                k=k, single_end=single_end), dmrs.to_dict("records"))
+                                k=k, single_end=single_end), 
+        dmrs.to_dict("records"))
     
-    sample_seqs =  [t for s in seqs for t in s[0]]
-    dmr_ctypes = [t for s in seqs for t in s[1]]
-    methyl_seq = [t for s in seqs for t in s[2]]
-    dmr_idces = [t for s in seqs for t in s[3]]
-    dna_seqs = [t for s in seqs for t in s[4]]
-    xm_tags = [t for s in seqs for t in s[5]]
-    return sample_seqs, dmr_ctypes, methyl_seq, dmr_idces, dna_seqs, xm_tags
-
+    return pd.concat(seqs, ignore_index=True)
 
 
 
@@ -280,14 +270,7 @@ def finetune_data_generate(args):
     
     # Collect reads from the .bam files
     print("Number of cpu : ", mp.cpu_count())
-    seqs = list()
-    ctypes = list()
-    dmr_ctype = list()
-    methyl_seqs = list()
-    dmr_idces = list()
-    dna_seqs = list()
-    xm_tags = list()
-    
+    df_reads = list()
     random.shuffle(sc_files)
 
     for f_sc in sc_files:
@@ -296,43 +279,23 @@ def finetune_data_generate(args):
         f_sc = f_sc[0]
         print("%s processing (%s)..."%(f_sc, f_sc_ctype))
 
-        sample_seqs, dmr_ctypes, methyl_seq, dmr_idx, dna_seq, xm_tag = read_extract(f_sc, dict_ref, k=3, dmrs=dmrs, ncores=args.n_cores)
+        extracted_reads = read_extract(f_sc, dict_ref, k=3, dmrs=dmrs, ncores=args.n_cores)
         
         # cell type for the single-cell data
-        ctypes += [f_sc_ctype for t in range(len(sample_seqs))]
+        extracted_reads["read_ctype"] = f_sc_ctype
+        df_reads.append(extracted_reads)
 
-        dmr_ctype += dmr_ctypes
-        seqs += sample_seqs
-        dmr_idces += dmr_idx
-        methyl_seqs += methyl_seq
-        dna_seqs += dna_seq
-        xm_tags += xm_tag
+    # Integrate all reads and shuffle
+    df_reads = pd.concat(df_reads, ignore_index=True).sample(frac=1).reset_index(drop=True)
 
-        del dmr_ctypes
-        del sample_seqs
-        del dmr_idx
-        del methyl_seq
-        del dna_seq
-        del xm_tag
-    
     # Split the data into train and valid/test
-    n_train = int(len(seqs)*args.split_ratio)
-    print("Size - train %d seqs , valid %d seqs "%(n_train, len(seqs) - n_train))
+    n_train = int(df_reads.shape[0]*args.split_ratio)
+    print("Size - train %d seqs , valid %d seqs "%(n_train, df_reads.shape[0] - n_train))
 
-    idces = list(range(len(seqs)))
-    random.shuffle(idces)
-    # Save the train and test dataset 
-    with open(fp_train_seq, "w") as f_seq:
-        for iidx in idces[:n_train]:
-            s, c, d,m, di, dn, xm = seqs[iidx], ctypes[iidx], dmr_ctype[iidx], methyl_seqs[iidx], dmr_idces[iidx], dna_seqs[iidx], xm_tags[iidx]
-            f_seq.write(s+"\t"+m+"\t"+c+"\t"+d+"\t"+str(di)+"\t"+dn+"\t"+xm+"\n")
-    
-    if args.split_ratio > 0:
-        with open(fp_test_seq, "w") as f_seq:
-            for iidx in idces[n_train:]:
-                s, c, d,m, di, dn, xm = seqs[iidx], ctypes[iidx], dmr_ctype[iidx], methyl_seqs[iidx], dmr_idces[iidx], dna_seqs[iidx], xm_tags[iidx]
-                f_seq.write(s+"\t"+m+"\t"+c+"\t"+d+"\t"+str(di)+"\t"+dn+"\t"+xm+"\n")
-    
+    # Write train & test files
+    df_reads.loc[:n_train,:].to_csv(fp_train_seq, sep="\t", header=None, index=None)
+    df_reads.loc[n_train:,:].to_csv(fp_test_seq, sep="\t", header=None, index=None)
+
 
 if __name__ == "__main__":
     args = arg_parser()
