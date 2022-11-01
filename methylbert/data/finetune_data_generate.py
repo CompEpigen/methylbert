@@ -115,7 +115,10 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         fetched_reads = aln.fetch(chromo, start, end, until_eof=True)
         processed_reads = list()
         for reads in fetched_reads:
-            ref_seq = dict_ref[chromo][reads.pos:(reads.pos+reads.query_alignment_end)].upper() # Remove case-specific mode occured by the quality
+            if (reads.pos  < start) or (reads.pos+reads.query_alignment_length) > end:
+                continue
+                
+            ref_seq = dict_ref[chromo][reads.pos:(reads.pos+reads.query_alignment_length)].upper() # Remove case-specific mode occured by the quality
             xm_tag = reads.get_tag("XM")
             cigarstring = reads.cigarstring
             
@@ -226,8 +229,6 @@ def finetune_data_generate(args):
     # Setup output files
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
-    fp_train_seq = os.path.join(args.output_dir, "train_seq.txt")
-    fp_test_seq = os.path.join(args.output_dir, "test_seq.txt")
     fp_dmr = os.path.join(args.output_dir, "dmrs.csv")
 
     # Reference genome
@@ -289,12 +290,19 @@ def finetune_data_generate(args):
     df_reads = pd.concat(df_reads, ignore_index=True).sample(frac=1).reset_index(drop=True)
 
     # Split the data into train and valid/test
-    n_train = int(df_reads.shape[0]*args.split_ratio)
-    print("Size - train %d seqs , valid %d seqs "%(n_train, df_reads.shape[0] - n_train))
+    if (args.split_ratio < 1.0) and (args.split_ratio > 0.0):
+        fp_train_seq = os.path.join(args.output_dir, "train_seq.txt")
+        fp_test_seq = os.path.join(args.output_dir, "test_seq.txt")
+        n_train = int(df_reads.shape[0]*args.split_ratio)
+        print("Size - train %d seqs , valid %d seqs "%(n_train, df_reads.shape[0] - n_train))
 
-    # Write train & test files
-    df_reads.loc[:n_train,:].to_csv(fp_train_seq, sep="\t", header=None, index=None)
-    df_reads.loc[n_train:,:].to_csv(fp_test_seq, sep="\t", header=None, index=None)
+        # Write train & test files
+        df_reads.loc[:n_train,:].to_csv(fp_train_seq, sep="\t", header=None, index=None)
+        df_reads.loc[n_train:,:].to_csv(fp_test_seq, sep="\t", header=None, index=None)
+    else:
+        fp_data_seq = os.path.join(args.output_dir, "data.txt")
+    
+        df_reads.to_csv(fp_data_seq, sep="\t", header=None, index=None)
 
 
 if __name__ == "__main__":

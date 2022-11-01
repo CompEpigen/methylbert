@@ -432,7 +432,7 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
         for i, batch in enumerate(data_loader):
             
             # 0. batch_data will be sent into the device(GPU or cpu)
-            data = {key: value.to(self.device) for key, value in batch.items()}
+            data = {key: value.to(self.device) for key, value in batch.items() if type(value) != list}
             with torch.no_grad():
 
                 if self._config.amp:
@@ -531,7 +531,9 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
         for epoch in range(epochs):
             for i, batch in enumerate(data_loader):
                 # 0. batch_data will be sent into the device(GPU or cpu)
-                data = {key: value.to(self.device) for key, value in batch.items()}
+                
+                data = {key: value.to(self.device) for key, value in batch.items() if type(value) != list}
+
 
                 start = time.time()
 
@@ -627,6 +629,13 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                         print("Step %d loss (%f) is lower than the current min loss (%f). Save the model at %s"%(self.step, global_step_loss, self.min_loss, self.save_path))
                         self.save(self.save_path)
                         self.min_loss = global_step_loss
+
+                    if self.step % 100 == 0 :
+                        print("Step %d loss (%f) is lower than the current min loss (%f). Save the model at %s"%(self.step, global_step_loss, self.min_loss, self.save_path))
+                        step_save_dir=self.save_path.replace("bert.model", "bert.model_step%d"%(self.step))
+                        if not os.path.exists(step_save_dir):
+                            os.mkdir(step_save_dir)
+                        self.save(step_save_dir)
 
                     # Save the step info (step, loss, lr, acc)
                     with open(self.save_path.split(".")[0]+"_train.csv", "a") as f_perform:

@@ -27,8 +27,15 @@ def _line2tokens(l, tokenizer, max_len=120):
 def _line2tokens_finetune(l, tokenizer, max_len=120):
 	# Separate n-mers tokens and labels from each line 
 
+	headers = ["seqname", "flag", "ref_name", "ref_pos", "map_quality", "cigar", "next_ref_name", "next_ref_pos", "length", "seq", "qual", "MD", "PG", "XG", "NM", "XM", "XR", "dna_seq", "methyl_seq", "dmr_ctype", "dmr_label", "ctype"]
+
 	l = l.strip().split("\t")
-	
+
+	if len(headers) == len(l):
+		l = {k: v for k, v in zip(headers, l)}
+
+	l["dna_seq"] = l["dna_seq"].split(" ")
+	'''
 	methyl_seq = list(l[1])
 	dmr_label = l[4]
 	ctype_label = l[2] == l[3]
@@ -41,33 +48,30 @@ def _line2tokens_finetune(l, tokenizer, max_len=120):
 		dna_seq=None
 		xm_tag = None
 	l = l[0].split(" ")
-
-
+	'''
+	
 	# Tokenisation
-	tokened = [tokenizer.to_seq(b) for b in l]
-	if len(tokened) > max_len:
-		return {"seq":tokened[:max_len], 
-				"methyl_seq":methyl_seq[:max_len],
-				"dmr_label": dmr_label, 
-				"ctype_label": ctype_label,
-				"dna_seq": dna_seq, 
-				"xm_tag":xm_tag}
+	l["dna_seq"] = [tokenizer.to_seq(b) for b in l["dna_seq"]]
+	l["methyl_seq"] = [int(m) for m in l["methyl_seq"]]
+	l["ctype_label"] = int(l["ctype"] == l["dmr_ctype"])
+	l["dmr_label"] = int(l["dmr_label"])
+
+	if len(l["dna_seq"]) > max_len:
+		l["dna_seq"] = l["dna_seq"][:max_len]
+		l["methyl_seq"] = l["methyl_seq"][:max_len]
 	else:
-		return {"seq": tokened + [[tokenizer.pad_index] for k in range(max_len-len(tokened))], 
-				"methyl_seq":methyl_seq + [2 for k in range(max_len-len(tokened))],
-				"dmr_label": dmr_label, 
-				"ctype_label": ctype_label,
-				"dna_seq": dna_seq, 
-				"xm_tag":xm_tag}
+		cur_seq_len=len(l["dna_seq"])
+		l["dna_seq"] = l["dna_seq"]+[[tokenizer.pad_index] for k in range(max_len-cur_seq_len)]
+		l["methyl_seq"] = l["methyl_seq"] + [2 for k in range(max_len-cur_seq_len)]
 
-
+	return l
 
 class MethylBertDataset(Dataset):
 	def __init__(self):
 		pass
 			
 	def __len__(self):
-		return self.lines.shape[0]
+		return self.lines.shape[0] if type(self.lines) == np.array else len(self.lines)
 
 
 class MethylBertPretrainDataset(MethylBertDataset):
@@ -212,7 +216,7 @@ class MethylBertPretrainDataset(MethylBertDataset):
 		return inputs, labels, masked_index
 
 class MethylBertFinetuneDataset(MethylBertDataset):
-	def __init__(self, f_path: str, vocab: WordVocab, seq_len: int, label_converter=None,n_cores=10):
+	def __init__(self, f_path: str, vocab: WordVocab, seq_len: int, n_cores=10):
 
 		self.vocab = vocab
 		self.seq_len = seq_len
@@ -226,79 +230,57 @@ class MethylBertFinetuneDataset(MethylBertDataset):
 
 		# Multiprocessing for the sequence tokenisation
 		with mp.Pool(n_cores) as pool:
-			line_labels = pool.map(partial(_line2tokens_finetune, tokenizer=self.vocab, max_len=self.seq_len), raw_seqs)
+			self.lines = pool.map(partial(_line2tokens_finetune, tokenizer=self.vocab, max_len=self.seq_len), raw_seqs)
 			del raw_seqs
-
-		self.lines = list()
-		self.methyl_lines = list()
-		self.dmr_labels = list()
-		self.ctype_labels = list()
-		self.dna_seq = list()
-		self.xm_tag = list()
-		for l in line_labels:
-			self.lines.append(l["seq"])
-			self.methyl_lines.append(l["methyl_seq"])
-			self.dmr_labels.append(int(l["dmr_label"]))
-			self.ctype_labels.append(int(l["ctype_label"]))
-
-			if len(l) > 5:
-				self.dna_seq.append(l["dna_seq"])
-				self.xm_tag.append(l["xm_tag"])
 
 		self.ctype_label_count = self._get_cls_num()
 		print(self.ctype_label_count)
+		'''
 		del line_labels
-			
-		self.lines = torch.squeeze(torch.tensor(np.array(self.lines, dtype=np.int32)))
-		self.methyl_lines = torch.squeeze(torch.tensor(np.array(self.methyl_lines, dtype=np.int8)))
 
+		
 		if not label_converter:
 			self.label_converter = {lab: idx for idx, lab in enumerate(set(self.dmr_labels))}
 		else:
 			self.label_converter = label_converter
+		'''
+		
 		
 	def _get_cls_num(self):
 		# unique labels
-		labels = list(set(self.ctype_labels))
+		ctype_labels=[l["ctype_label"] for l in self.lines]
+		labels = list(set(ctype_labels))
 		label_count = np.zeros(len(labels))
 		for l in labels:
-			label_count[l] = sum(np.array(self.ctype_labels) == l)
+			label_count[l] = sum(np.array(ctype_labels) == l)
 		return label_count
 
 	def num_dmrs(self):
-		return len(set(self.dmr_labels))
+		return len(set([l["dmr_label"] for l in self.lines]))
 	
 	def subset_data(self, n_seq):
 		self.lines = self.lines[:n_seq]
-		self.methyl_lines = self.methyl_lines[:n_seq]
-		self.dmr_labels = self.dmr_labels[:n_seq]
-		self.ctype_labels = self.ctype_labels[:n_seq]
-	
 
 	def __getitem__(self, index): 
 
-		dna_seq = deepcopy(self.lines[index])
-		methyl_seq = deepcopy(self.methyl_lines[index])
-		dmr_label = deepcopy(self.dmr_labels[index])
-		ctype_label = deepcopy(self.ctype_labels[index])
-
+		item = deepcopy(self.lines[index])
+		
+		item["dna_seq"] = torch.squeeze(torch.tensor(np.array(item["dna_seq"], dtype=np.int32)))
+		item["methyl_seq"] = torch.squeeze(torch.tensor(np.array(item["methyl_seq"], dtype=np.int8)))
+	
 		# Special tokens (SOS, EOS)
 
-		end = torch.where(dna_seq!=self.vocab.pad_index)[0].tolist()[-1] + 1 # end of the read
-		if end < dna_seq.shape[0]:
-			dna_seq[end] = self.vocab.eos_index
-			methyl_seq[end] = 2
+		end = torch.where(item["dna_seq"]!=self.vocab.pad_index)[0].tolist()[-1] + 1 # end of the read
+		if end < item["dna_seq"].shape[0]:
+			item["dna_seq"][end] = self.vocab.eos_index
+			item["methyl_seq"][end] = 2
 		else:
-			dna_seq[-1] = self.vocab.eos_index
-			methyl_seq[-1] = 2
+			item["dna_seq"][-1] = self.vocab.eos_index
+			item["methyl_seq"][-1] = 2
 		
-		dna_seq = torch.cat((torch.tensor([self.vocab.sos_index]), dna_seq))
-		methyl_seq = torch.cat((torch.tensor([2]), methyl_seq))
+		item["dna_seq"] = torch.cat((torch.tensor([self.vocab.sos_index]), item["dna_seq"]))
+		item["methyl_seq"] = torch.cat((torch.tensor([2]), item["methyl_seq"]))
+
 		
-		return {"dna_seq": dna_seq,
-				"methyl_seq": methyl_seq,
-				"dmr_label": dmr_label,
-				"ctype_label": ctype_label,
-				"query":self.dna_seq[index],
-				"xm_tag":self.xm_tag[index]}
+		return item
 	
