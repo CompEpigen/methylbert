@@ -115,8 +115,12 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         fetched_reads = aln.fetch(chromo, start, end, until_eof=True)
         processed_reads = list()
         for reads in fetched_reads:
-            if (reads.pos  < start) or (reads.pos+reads.query_alignment_length) > end:
+            if (reads.pos  < start) or ((reads.pos+reads.query_alignment_length) > end):
+                print("::::::", reads.pos, reads.pos + reads.query_alignment_length, start, end)
                 continue
+            else:
+                print(reads)
+                
                 
             ref_seq = dict_ref[chromo][reads.pos:(reads.pos+reads.query_alignment_length)].upper() # Remove case-specific mode occured by the quality
             xm_tag = reads.get_tag("XM")
@@ -242,7 +246,7 @@ def finetune_data_generate(args):
     del record_iter
     
     # Load DMRs into a data frame
-    dmrs = pd.read_csv(args.f_dmr, sep="\t")
+    dmrs = pd.read_csv(args.f_dmr, sep="\t", index_col=None)
     print(dmrs.head())
 
     # Remove chrX, chrY, chrM in DMRs
@@ -251,9 +255,15 @@ def finetune_data_generate(args):
 
     # Select top-dmrs based on diff.Methy
     if args.n_dmrs > 0:
-        #dmrs = dmrs[:args.n_dmrs]
-        dmrs = [dmrs[dmrs["ctype"]==c][:args.n_dmrs] for c in dmrs["ctype"].unique()]
-        dmrs = pd.concat(dmrs)
+        list_dmrs = list()
+        for c in dmrs["ctype"].unique():
+            ctype_dmrs = dmrs[dmrs["ctype"]==c]
+            if ctype_dmrs.shape[0] > args.n_dmrs:
+                list_dmrs.append(ctype_dmrs[:args.n_dmrs])
+            else:
+                list_dmrs.append(ctype_dmrs)
+        dmrs = pd.concat(list_dmrs)
+        del list_dmrs
 
     
     # Newly assign dmr label from 0
