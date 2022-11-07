@@ -24,31 +24,21 @@ def _line2tokens(l, tokenizer, max_len=120):
 		return tokened + [[tokenizer.pad_index] for k in range(max_len-len(tokened))]
 
 
-def _line2tokens_finetune(l, tokenizer, max_len=120):
+def _line2tokens_finetune(l, tokenizer, max_len=120, headers=None):
 	# Separate n-mers tokens and labels from each line 
-
-	headers = ["seqname", "flag", "ref_name", "ref_pos", "map_quality", "cigar", "next_ref_name", "next_ref_pos", "length", "seq", "qual", "MD", "PG", "XG", "NM", "XM", "XR", "dna_seq", "methyl_seq", "dmr_ctype", "dmr_label", "ctype"]
-
 	l = l.strip().split("\t")
 
+	if ( not headers ) and ( len(l) == 22 ):
+		headers = ["seqname", "flag", "ref_name", "ref_pos", "map_quality", "cigar", "next_ref_name", "next_ref_pos", "length", "seq", "qual", "MD", "PG", "XG", "NM", "XM", "XR", "dna_seq", "methyl_seq", "dmr_ctype", "dmr_label", "ctype"]
+	elif ( not headers ) and ( len(l) == 5 ):
+		headers = ["dna_seq", "methyl_seq", "dmr_ctype", "ctype", "dmr_label"]
+	elif ( not headers ) and ( len(l) == 7 ):
+		headers = ["dna_seq", "methyl_seq", "dmr_ctype", "ctype", "dmr_label",  "seq", "xm_tag"]
+	
 	if len(headers) == len(l):
 		l = {k: v for k, v in zip(headers, l)}
 
 	l["dna_seq"] = l["dna_seq"].split(" ")
-	'''
-	methyl_seq = list(l[1])
-	dmr_label = l[4]
-	ctype_label = l[2] == l[3]
-
-	if len(l) > 5:
-		dna_seq = l[5]
-		xm_tag = l[6]
-
-	else:
-		dna_seq=None
-		xm_tag = None
-	l = l[0].split(" ")
-	'''
 	
 	# Tokenisation
 	l["dna_seq"] = [tokenizer.to_seq(b) for b in l["dna_seq"]]
@@ -184,13 +174,6 @@ class MethylBertPretrainDataset(MethylBertDataset):
 		# Avoid loss calculation on unmasked tokens
 		labels[~masked_indices] = -100 
 
-		'''
-		# Deal with mask
-		if torch.sum(labels==4).tolist() > 0:
-			print(labels, inputs)
-		'''
-
-
 		# 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
 		indices_replaced = torch.bernoulli(torch.full(labels.shape, 0.8)).bool() & masked_indices
 		inputs[indices_replaced] = self.vocab.mask_index
@@ -226,24 +209,20 @@ class MethylBertFinetuneDataset(MethylBertDataset):
 		with open(self.f_path, "r") as f_input:
 			raw_seqs = f_input.read().splitlines()
 
+		if "XM" in raw_seqs[0]:
+			headers = raw_seqs[0].split("\t")
+			raw_seqs = raw_seqs[1:]
+		else:
+			headers=None
 		print("Total number of sequences : ", len(raw_seqs))
 
 		# Multiprocessing for the sequence tokenisation
 		with mp.Pool(n_cores) as pool:
-			self.lines = pool.map(partial(_line2tokens_finetune, tokenizer=self.vocab, max_len=self.seq_len), raw_seqs)
+			self.lines = pool.map(partial(_line2tokens_finetune, tokenizer=self.vocab, max_len=self.seq_len, headers=headers), raw_seqs)
 			del raw_seqs
 
 		self.ctype_label_count = self._get_cls_num()
-		print(self.ctype_label_count)
-		'''
-		del line_labels
-
-		
-		if not label_converter:
-			self.label_converter = {lab: idx for idx, lab in enumerate(set(self.dmr_labels))}
-		else:
-			self.label_converter = label_converter
-		'''
+		print("# of reads in each label: ", self.ctype_label_count)
 		
 		
 	def _get_cls_num(self):

@@ -17,7 +17,8 @@ non_assign_chars = ["h","H", "x", "X"]
 def arg_parser():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("-s", "--sc_dataset", required=True, type=str, help=".txt file all single-cell bam files are listed up")
+    parser.add_argument("-s", "--sc_dataset", required=False, default=None, type=str, help=".txt file all single-cell bam files are listed up")
+    parser.add_argument("-f", "--input_file", required=False, default=None, type=str, help=".bam file to be processed")
     parser.add_argument("-d", "--f_dmr", required=True, type=str, help=".bed or .csv file DMRs information is contained")
     parser.add_argument("-o", "--output_dir", required=True, type=str, help="a directory where all generated results will be saved")
     parser.add_argument("-r", "--f_ref", required=True, type=str, help=".fasta file for the reference genome")
@@ -116,11 +117,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         processed_reads = list()
         for reads in fetched_reads:
             if (reads.pos  < start) or ((reads.pos+reads.query_alignment_length) > end):
-                print("::::::", reads.pos, reads.pos + reads.query_alignment_length, start, end)
-                continue
-            else:
-                print(reads)
-                
+                continue     
                 
             ref_seq = dict_ref[chromo][reads.pos:(reads.pos+reads.query_alignment_length)].upper() # Remove case-specific mode occured by the quality
             xm_tag = reads.get_tag("XM")
@@ -209,8 +206,8 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
 
         processed_reads = _reads_overlapping(aln, dmr["chr"], int(dmr["start"]), int(dmr["end"]), single_end)
 
-        processed_reads["ctype"] = dmr["ctype"]
-        processed_reads["dmr_id"] = dmr["dmr_id"]
+        processed_reads["dmr_ctype"] = dmr["ctype"]
+        processed_reads["dmr_label"] = dmr["dmr_id"]
 
         return processed_reads
     
@@ -226,6 +223,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
 
 
 def finetune_data_generate(args):
+
     # Setup random seed 
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -247,7 +245,6 @@ def finetune_data_generate(args):
     
     # Load DMRs into a data frame
     dmrs = pd.read_csv(args.f_dmr, sep="\t", index_col=None)
-    print(dmrs.head())
 
     # Remove chrX, chrY, chrM in DMRs
     regex_expr = "chr\d+"
@@ -273,11 +270,20 @@ def finetune_data_generate(args):
 
     print(f"Number of DMRs : {len(dmrs)}")
 
-    
-    # Collect train data (single-cell samples)
-    train_sc_samples = []
-    with open(args.sc_dataset, "r") as fp_sc_dataset:
-        sc_files = fp_sc_dataset.readlines()
+    # check whether the input is a file or a file list
+
+    if ( not args.sc_dataset ) and (not args.input_file):
+        sys.exit("Please provide either a list of input files or a file path. Both are given.")
+    elif ( not args.sc_dataset ):
+        # one input file in the list
+        sc_files = [args.input_file]
+    elif ( not args.input_file ):
+        # Collect train data (single-cell samples)
+        train_sc_samples = []
+        with open(args.sc_dataset, "r") as fp_sc_dataset:
+            sc_files = fp_sc_dataset.readlines()
+    else:
+        sys.exit("Either a list of input files or a file path must be given.")
     
     # Collect reads from the .bam files
     print("Number of cpu : ", mp.cpu_count())
@@ -286,14 +292,23 @@ def finetune_data_generate(args):
 
     for f_sc in sc_files:
         f_sc = f_sc.strip().split("\t")
-        f_sc_ctype = f_sc[1]
         f_sc = f_sc[0]
-        print("%s processing (%s)..."%(f_sc, f_sc_ctype))
+
+        if len(f_sc) > 1:
+            f_sc_ctype = f_sc[1]
+            print("%s processing (%s)..."%(f_sc, f_sc_ctype))
+        else:
+             print("%s processing..."%f_sc)
 
         extracted_reads = read_extract(f_sc, dict_ref, k=3, dmrs=dmrs, ncores=args.n_cores)
         
         # cell type for the single-cell data
-        extracted_reads["read_ctype"] = f_sc_ctype
+        if "RG" in extracted_reads.columns:
+            extracted_reads = extracted_reads.rename(columns={"RG":"read_ctype"})
+            extracted_reads["ctype"] = [c.split("_")[1] for c in extracted_reads["read_ctype"]]
+        else:
+            extracted_reads["ctype"] = f_sc_ctype
+        extracted_reads = extracted_reads.rename(columns={"RF":"dna_seq", "ME":"methyl_seq"})
         df_reads.append(extracted_reads)
 
     # Integrate all reads and shuffle
@@ -312,7 +327,7 @@ def finetune_data_generate(args):
     else:
         fp_data_seq = os.path.join(args.output_dir, "data.txt")
     
-        df_reads.to_csv(fp_data_seq, sep="\t", header=None, index=None)
+        df_reads.to_csv(fp_data_seq, sep="\t", header=True, index=None)
 
 
 if __name__ == "__main__":
