@@ -4,6 +4,7 @@ import torch
 
 import numpy as np
 import math, os
+from copy import deepcopy
 
 from transformers import BertPreTrainedModel, BertModel
 
@@ -15,7 +16,7 @@ class LDAMLoss(nn.Module):
 
         m_list = 1.0 / np.sqrt(np.sqrt(cls_num_list))
         m_list = m_list * (max_m / np.max(m_list)) # C = max_m / np.max(m_list)
-        m_list = torch.cuda.FloatTensor(m_list)
+        m_list = torch.tensor(m_list, dtype=torch.float32)
         self.m_list = m_list
         assert s > 0
         self.s = s
@@ -25,13 +26,43 @@ class LDAMLoss(nn.Module):
         index = torch.zeros_like(x, dtype=torch.uint8)
         index.scatter_(1, target.data.view(-1, 1), 1)
         
-        index_float = index.type(torch.cuda.FloatTensor)
+        index_float = index.type(torch.tensor)
         batch_m = torch.matmul(self.m_list[None, :], index_float.transpose(0,1))
         batch_m = batch_m.view((-1, 1))
         x_m = x - batch_m
     
         output = torch.where(index, x_m, x)
         return F.cross_entropy(self.s*output, target, weight=self.weight)
+
+class LDAMLoss_tumour(nn.Module):
+    
+    def __init__(self, cls_num_list, max_m=0.5, weight=None, s=30, t_ratio=0.1, device="cpu"):
+        super(LDAMLoss_tumour, self).__init__()
+
+        self.cls_num_list = deepcopy(cls_num_list)
+        self.cls_num_list[1] = self.cls_num_list[1] * t_ratio
+
+        m_list = 1.0 / torch.sqrt(torch.sqrt(cls_num_list))
+        m_list = m_list * (max_m / torch.max(m_list)) # C = max_m / np.max(m_list)
+        #m_list = torch.tensor(m_list, dtype=torch.float32)
+        self.m_list = m_list
+        assert s > 0
+        self.s = s
+        self.weight = weight
+        self.device = device
+
+    def forward(self, x, target):
+        index = torch.zeros_like(x, dtype=torch.uint8)
+        index = index.scatter_(1, target.data.view(-1, 1), 1).to(torch.float32).to(x.get_device())
+        
+        #index_float = index.type(torch.tensor)
+        batch_m = torch.matmul(self.m_list[None, :].to(x.get_device()), index.transpose(0,1))
+        batch_m = batch_m.view((-1, 1))
+        x_m = x - batch_m
+    
+        output = torch.where(index.to(torch.bool), x_m, x)
+        return F.cross_entropy(self.s*output, target, weight=self.weight)
+
 
 class CNNClassification(nn.Module):
     def __init__(self, seq_len, n_hidden, label_count = None, n_seq=150):
@@ -96,7 +127,7 @@ class MethylseqFeature(CNNClassification):
 
 
 class MethylBertForSequenceClassification(BertPreTrainedModel):
-    def __init__(self, config, seq_len=150):
+    def __init__(self, config, seq_len=150, loss="bce"):
         super().__init__(config)
         self.num_labels = config.num_labels
 
@@ -106,16 +137,19 @@ class MethylBertForSequenceClassification(BertPreTrainedModel):
 
         self.read_classifier =  CNNClassification(seq_len=seq_len,
                                                    n_hidden=100)
-
-        
         self.init_weights()
 
-    def set_nclass(self, n_classes):
-        self.n_classes=n_classes
-        print(self.n_classes)
-
+    def set_loss(self, loss="bce", n_classes=None, device="cpu"):
+        #self.device=device
+        self.loss = loss
+        if "ldam" in loss:
+            self.n_classes=n_classes
+            print("Loss function is %s, and the given class sizes :"%(self.loss), self.n_classes)
+        else:
+            print("Loss function is %s"%(self.loss))
     def from_pretrained_read_classifier(self, pretrained_model_name_or_path, device="cpu"):
         self.read_classifier.load_state_dict(torch.load(pretrained_model_name_or_path, map_location=device))
+        #self.loss = self.config.loss
         
     def forward(
         self,
@@ -189,17 +223,22 @@ class MethylBertForSequenceClassification(BertPreTrainedModel):
 
         classification_output = self.read_classifier(bert_features=outputs[1][-1],
                                                      methyl_seqs = methyl_seqs)
-        
-        if type(self.n_classes) == list :
+        if self.loss == "ldam" :
             classification_loss_fct = LDAMLoss(cls_num_list = self.n_classes)
+        elif self.loss == "ldamt":
+            classification_loss_fct = LDAMLoss_tumour(cls_num_list = self.n_classes, device="cuda:0")
+            binary_loss = classification_loss_fct(classification_output[0].view(-1, 2), 
+            ctype_label)
+
         else:
             classification_loss_fct = nn.BCELoss()
+            binary_loss = classification_loss_fct(classification_output[0].view(-1, 2), 
+            nn.functional.one_hot(ctype_label, num_classes=2).to(torch.float32).view(-1, 2))
+
 
         dmr_loss_fct = nn.CrossEntropyLoss()
         dmr_loss = dmr_loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-        binary_loss = classification_loss_fct(classification_output[0].view(-1, 2), 
-            nn.functional.one_hot(ctype_label, num_classes=2).to(torch.float32).view(-1, 2))
-
+        
         loss = dmr_loss + binary_loss
 
         outputs = (loss,) + outputs

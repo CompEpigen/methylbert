@@ -6,7 +6,6 @@ from torch.optim.lr_scheduler import LambdaLR
 from torch.cuda.amp import autocast, GradScaler
 
 from sklearn.metrics import roc_curve, auc, accuracy_score
-from copy import deepcopy
 from collections import OrderedDict
 
 from methylbert.network import CNNClassification, MethylBertForSequenceClassification
@@ -59,7 +58,8 @@ def get_config(**kwargs):
             ('amp', False),
             ("gradient_accumulation_steps", 1), 
             ("max_grad_norm", 1.0),
-            ("eval", False)
+            ("eval", False),
+            ("loss", "bce")
           ]
         )
 
@@ -85,9 +85,6 @@ class MethylBertTrainer(object):
         cuda_condition = torch.cuda.is_available() and self._config.with_cuda
         self.device = torch.device("cuda:0" if cuda_condition else "cpu")
 
-        # This BERT model will be saved every epoch
-        #self.bert = bert
-        
         self.test_data = test_dataloader
 
         self.min_loss = np.inf
@@ -394,6 +391,9 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        #setup loss
+        self.loss = self._config.loss
+
     def summary(self):
 
         print(self.model)
@@ -406,8 +406,7 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
             hidden_dropout_prob=0.01, 
             vocab_size = len(self.train_data.dataset.vocab))
 
-        self.bert = MethylBertForSequenceClassification(config=config, 
-                                                        nclasses=self.train_data.dataset.ctype_label_count)
+        self.bert = MethylBertForSequenceClassification(config=config)
         #self._creaete_classification_model()
         # Initialize the BERT Language Model, with BERT model
         self._setup_model()
@@ -675,18 +674,17 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
         
     def load(self, file_path: str, n_dmrs=None):
         print("Restore the pretrained model")
-        self.bert = MethylBertForSequenceClassification.from_pretrained(file_path, #BertForSequenceClassification.from_pretrained(args.pretrain, 
+        self.bert = MethylBertForSequenceClassification.from_pretrained(file_path, 
             num_labels=self.train_data.dataset.num_dmrs() if not n_dmrs else n_dmrs, 
             output_attentions=True, 
             output_hidden_states=True, 
             hidden_dropout_prob=0.01, 
             vocab_size = len(self.train_data.dataset.vocab))
 
-        '''
-        self._creaete_classification_model()
-        '''
+        
         if os.path.exists(os.path.dirname(file_path)+"/read_classification_cnn.pickle"):
             print("Restore read classification CNN model from %s"%(os.path.dirname(file_path)+"/read_classification_cnn.pickle"))
             self.bert.from_pretrained_read_classifier(os.path.dirname(file_path)+"/read_classification_cnn.pickle", self.device)
-        self.bert.set_nclass(self.train_data.dataset.ctype_label_count)
+        self.bert.set_loss(loss = self.loss, 
+                           n_classes = torch.tensor(self.train_data.dataset.ctype_label_count, dtype=torch.int64), device=self.device)
         self._setup_model()
