@@ -11,7 +11,7 @@ from transformers import BertPreTrainedModel, BertModel
 # https://github.com/kaidic/LDAM-DRW/blob/master/losses.py
 class LDAMLoss(nn.Module):
     
-    def __init__(self, cls_num_list, max_m=0.5, weight=None, s=30):
+    def __init__(self, cls_num_list, max_m=0.5, weight=None, s=15):
         super(LDAMLoss, self).__init__()
 
         m_list = 1.0 / np.sqrt(np.sqrt(cls_num_list))
@@ -36,15 +36,14 @@ class LDAMLoss(nn.Module):
 
 class LDAMLoss_tumour(nn.Module):
     
-    def __init__(self, cls_num_list, max_m=0.5, weight=None, s=30, t_ratio=0.1, device="cpu"):
+    def __init__(self, cls_num_list, max_m=0.5, weight=None, s=30, t_ratio=0.5, device="cpu"):
         super(LDAMLoss_tumour, self).__init__()
 
         self.cls_num_list = deepcopy(cls_num_list)
         self.cls_num_list[1] = self.cls_num_list[1] * t_ratio
 
         m_list = 1.0 / torch.sqrt(torch.sqrt(cls_num_list))
-        m_list = m_list * (max_m / torch.max(m_list)) # C = max_m / np.max(m_list)
-        #m_list = torch.tensor(m_list, dtype=torch.float32)
+        m_list = m_list * (max_m / torch.max(m_list))
         self.m_list = m_list
         assert s > 0
         self.s = s
@@ -53,10 +52,16 @@ class LDAMLoss_tumour(nn.Module):
 
     def forward(self, x, target):
         index = torch.zeros_like(x, dtype=torch.uint8)
-        index = index.scatter_(1, target.data.view(-1, 1), 1).to(torch.float32).to(x.get_device())
+        if x.get_device() >= 0:
+            # parallel gpu
+            index = index.scatter_(1, target.data.view(-1, 1), 1).to(torch.float32).to(x.get_device())
+            batch_m = torch.matmul(self.m_list[None, :].to(x.get_device()), index.transpose(0,1))
         
-        #index_float = index.type(torch.tensor)
-        batch_m = torch.matmul(self.m_list[None, :].to(x.get_device()), index.transpose(0,1))
+        else:
+            index = index.scatter_(1, target.data.view(-1, 1), 1).to(torch.float32)
+            batch_m = torch.matmul(self.m_list[None, :], index.transpose(0,1))
+        
+
         batch_m = batch_m.view((-1, 1))
         x_m = x - batch_m
     
@@ -229,11 +234,16 @@ class MethylBertForSequenceClassification(BertPreTrainedModel):
             classification_loss_fct = LDAMLoss_tumour(cls_num_list = self.n_classes, device="cuda:0")
             binary_loss = classification_loss_fct(classification_output[0].view(-1, 2), 
             ctype_label)
+        elif self.loss == "hinge":
+            classification_loss_fct = nn.HingeEmbeddingLoss()
+            binary_loss = classification_loss_fct(torch.argmax(classification_output[0], axis=-1), 
+            (ctype_label*2-1))
 
         else:
             classification_loss_fct = nn.BCELoss()
             binary_loss = classification_loss_fct(classification_output[0].view(-1, 2), 
             nn.functional.one_hot(ctype_label, num_classes=2).to(torch.float32).view(-1, 2))
+
 
 
         dmr_loss_fct = nn.CrossEntropyLoss()

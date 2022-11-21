@@ -246,6 +246,7 @@ class MethylBertFinetuneDataset(MethylBertDataset):
 		
 		item["dna_seq"] = torch.squeeze(torch.tensor(np.array(item["dna_seq"], dtype=np.int32)))
 		item["methyl_seq"] = torch.squeeze(torch.tensor(np.array(item["methyl_seq"], dtype=np.int8)))
+		item["is_cpg"] = item["methyl_seq"] < 2
 	
 		# Special tokens (SOS, EOS)
 
@@ -253,13 +254,15 @@ class MethylBertFinetuneDataset(MethylBertDataset):
 		if end < item["dna_seq"].shape[0]:
 			item["dna_seq"][end] = self.vocab.eos_index
 			item["methyl_seq"][end] = 2
+			item["is_cpg"][end] = 0
 		else:
 			item["dna_seq"][-1] = self.vocab.eos_index
 			item["methyl_seq"][-1] = 2
+			item["is_cpg"][-1] = 0
 		
 		item["dna_seq"] = torch.cat((torch.tensor([self.vocab.sos_index]), item["dna_seq"]))
 		item["methyl_seq"] = torch.cat((torch.tensor([2]), item["methyl_seq"]))
+		item["is_cpg"] = torch.cat((torch.tensor([0]), item["is_cpg"])).to(torch.long)
 
-		
 		return item
 	

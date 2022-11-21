@@ -438,12 +438,14 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                     with autocast():
                         mask_lm_output = self.model.forward(step=self.step,
                                                 input_ids = data["dna_seq"],
+                                                #token_type_ids=data["is_cpg"],
                                                 labels = data["dmr_label"],
                                                 methyl_seqs=data["methyl_seq"],
                                                 ctype_label=data["ctype_label"]) if dmr_loss else self.model.forward(input_ids = data["dna_seq"])
                 else:
                     mask_lm_output = self.model.forward(step=self.step,
                                                 input_ids = data["dna_seq"],
+                                                #token_type_ids=data["is_cpg"],
                                                 labels = data["dmr_label"],
                                                 methyl_seqs=data["methyl_seq"],
                                                 ctype_label=data["ctype_label"]) if dmr_loss else self.model.forward(input_ids = data["dna_seq"])
@@ -540,12 +542,14 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                     with autocast():
                         mask_lm_output = self.model.forward(step=self.step,
                                                 input_ids = data["dna_seq"],
+                                                #token_type_ids=data["is_cpg"],
                                                 labels = data["dmr_label"],
                                                 methyl_seqs=data["methyl_seq"],
                                                 ctype_label=data["ctype_label"]) if dmr_loss else self.model.forward(input_ids = data["dna_seq"])
                 else:
                     mask_lm_output = self.model.forward(step=self.step,
                                                 input_ids = data["dna_seq"],
+                                                #token_type_ids=data["is_cpg"],
                                                 labels = data["dmr_label"],
                                                 methyl_seqs=data["methyl_seq"],
                                                 ctype_label=data["ctype_label"]) if dmr_loss else self.model.forward(input_ids = data["dna_seq"])
