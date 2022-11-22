@@ -8,7 +8,7 @@ from torch.cuda.amp import autocast, GradScaler
 from sklearn.metrics import roc_curve, auc, accuracy_score
 from collections import OrderedDict
 
-from methylbert.network import CNNClassification, MethylBertForSequenceClassification
+from methylbert.network import CNNClassification, MethylBertForSequenceClassification, MethylBertForMergedClassification
 from transformers import BertForSequenceClassification, BertConfig, BertForMaskedLM
 
 import tqdm, time
@@ -56,6 +56,7 @@ def get_config(**kwargs):
             ("decrease_steps", 1500),
             ('eval', False),
             ('amp', False),
+            ("methyl_learning", "embedding"),
             ("gradient_accumulation_steps", 1), 
             ("max_grad_norm", 1.0),
             ("eval", False),
@@ -406,8 +407,12 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
             hidden_dropout_prob=0.01, 
             vocab_size = len(self.train_data.dataset.vocab))
 
-        self.bert = MethylBertForSequenceClassification(config=config)
-        #self._creaete_classification_model()
+        print("Methylation patterns will be learnt via ", self._config.methyl_learning)
+        if self._config.methyl_learning == "cnn":
+            self.bert = MethylBertForSequenceClassification(config=config)
+        elif self._config.methyl_learning == "embedding":
+            self.bert = MethylBertForMergedClassification(config=config)
+
         # Initialize the BERT Language Model, with BERT model
         self._setup_model()
 
@@ -437,7 +442,7 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                 with autocast(enabled=self._config.amp):
                     mask_lm_output = self.model.forward(step=self.step,
                                             input_ids = data["dna_seq"],
-                                            #token_type_ids=data["methyl_seq"],
+                                            token_type_ids=data["is_mehthyl"],
                                             labels = data["dmr_label"],
                                             methyl_seqs=data["methyl_seq"],
                                             ctype_label=data["ctype_label"]) if dmr_loss else self.model.forward(input_ids = data["dna_seq"])
@@ -516,14 +521,13 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
 
 
                 start = time.time()
-
                 with autocast(enabled=self._config.amp):
-                        mask_lm_output = self.model.forward(step=self.step,
-                                                input_ids = data["dna_seq"],
-                                                #token_type_ids=data["methyl_seq"],
-                                                labels = data["dmr_label"],
-                                                methyl_seqs=data["methyl_seq"],
-                                                ctype_label=data["ctype_label"]) if dmr_loss else self.model.forward(input_ids = data["dna_seq"])
+                    mask_lm_output = self.model.forward(step=self.step,
+                                            input_ids = data["dna_seq"],
+                                            token_type_ids=data["is_mehthyl"],
+                                            labels = data["dmr_label"],
+                                            methyl_seqs=data["methyl_seq"],
+                                            ctype_label=data["ctype_label"]) if dmr_loss else self.model.forward(input_ids = data["dna_seq"])
                 loss = mask_lm_output["loss"]#mask_lm_output.loss 
 
                 # Concatenate predicted sequences for the evaluation 
@@ -621,22 +625,32 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
         #super().save(file_path)
         self.bert.to("cpu")
         self.bert.save_pretrained(file_path)
-        torch.save(self.bert.read_classifier.state_dict(), os.path.dirname(file_path)+"/read_classification_cnn.pickle")
+
+        if hasattr(self.bert, "read_classifier"):
+            torch.save(self.bert.read_classifier.state_dict(), os.path.dirname(file_path)+"/read_classification_cnn.pickle")
 
         self.bert.to(self.device)
         print("Step:%d Model Saved on:" % self.step, file_path)
         
     def load(self, file_path: str, n_dmrs=None):
         print("Restore the pretrained model")
-        self.bert = MethylBertForSequenceClassification.from_pretrained(file_path, 
-            num_labels=self.train_data.dataset.num_dmrs() if not n_dmrs else n_dmrs, 
-            output_attentions=True, 
-            output_hidden_states=True, 
-            hidden_dropout_prob=0.01, 
-            vocab_size = len(self.train_data.dataset.vocab))
-
+        print("Methylation patterns will be learnt via ", self._config.methyl_learning)
+        if self._config.methyl_learning == "cnn":
+            self.bert = MethylBertForSequenceClassification.from_pretrained(file_path, 
+                num_labels=self.train_data.dataset.num_dmrs() if not n_dmrs else n_dmrs, 
+                output_attentions=True, 
+                output_hidden_states=True, 
+                hidden_dropout_prob=0.01, 
+                vocab_size = len(self.train_data.dataset.vocab))
+        elif self._config.methyl_learning == "embedding":
+            self.bert = MethylBertForMergedClassification.from_pretrained(file_path, 
+                num_labels=self.train_data.dataset.num_dmrs() if not n_dmrs else n_dmrs, 
+                output_attentions=True, 
+                output_hidden_states=True, 
+                hidden_dropout_prob=0.01, 
+                vocab_size = len(self.train_data.dataset.vocab))
         
-        if os.path.exists(os.path.dirname(file_path)+"/read_classification_cnn.pickle"):
+        if os.path.exists(os.path.dirname(file_path)+"/read_classification_cnn.pickle") and self._config.methyl_learning == "cnn":
             print("Restore read classification CNN model from %s"%(os.path.dirname(file_path)+"/read_classification_cnn.pickle"))
             self.bert.from_pretrained_read_classifier(os.path.dirname(file_path)+"/read_classification_cnn.pickle", self.device)
         self.bert.set_loss(loss = self.loss, 

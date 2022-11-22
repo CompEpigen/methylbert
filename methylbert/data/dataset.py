@@ -199,7 +199,7 @@ class MethylBertPretrainDataset(MethylBertDataset):
 		return inputs, labels, masked_index
 
 class MethylBertFinetuneDataset(MethylBertDataset):
-	def __init__(self, f_path: str, vocab: WordVocab, seq_len: int, n_cores=10):
+	def __init__(self, f_path: str, vocab: WordVocab, seq_len: int, n_cores=10, n_seqs = None):
 
 		self.vocab = vocab
 		self.seq_len = seq_len
@@ -214,6 +214,9 @@ class MethylBertFinetuneDataset(MethylBertDataset):
 			raw_seqs = raw_seqs[1:]
 		else:
 			headers=None
+
+		if not n_seqs:
+			raw_seqs = raw_seqs[:n_seqs]
 		print("Total number of sequences : ", len(raw_seqs))
 
 		# Multiprocessing for the sequence tokenisation
@@ -246,22 +249,21 @@ class MethylBertFinetuneDataset(MethylBertDataset):
 		
 		item["dna_seq"] = torch.squeeze(torch.tensor(np.array(item["dna_seq"], dtype=np.int32)))
 		item["methyl_seq"] = torch.squeeze(torch.tensor(np.array(item["methyl_seq"], dtype=np.int8)))
-		item["is_cpg"] = item["methyl_seq"] < 2
-	
+		
 		# Special tokens (SOS, EOS)
 
 		end = torch.where(item["dna_seq"]!=self.vocab.pad_index)[0].tolist()[-1] + 1 # end of the read
 		if end < item["dna_seq"].shape[0]:
 			item["dna_seq"][end] = self.vocab.eos_index
 			item["methyl_seq"][end] = 2
-			item["is_cpg"][end] = 0
 		else:
 			item["dna_seq"][-1] = self.vocab.eos_index
 			item["methyl_seq"][-1] = 2
-			item["is_cpg"][-1] = 0
+			
 		
 		item["dna_seq"] = torch.cat((torch.tensor([self.vocab.sos_index]), item["dna_seq"]))
 		item["methyl_seq"] = torch.cat((torch.tensor([2]), item["methyl_seq"]))
-		item["is_cpg"] = torch.cat((torch.tensor([0]), item["is_cpg"])).to(torch.long)
+		item["is_mehthyl"] = item["methyl_seq"]==1
+		item["is_mehthyl"] = item["is_mehthyl"].to(torch.long)
 		return item
 	
