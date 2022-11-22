@@ -36,7 +36,7 @@ class LDAMLoss(nn.Module):
 
 class LDAMLoss_tumour(nn.Module):
     
-    def __init__(self, cls_num_list, max_m=0.5, weight=None, s=30, t_ratio=0.5, device="cpu"):
+    def __init__(self, cls_num_list, max_m=0.5, weight=None, s=15, t_ratio=0.5, device="cpu"):
         super(LDAMLoss_tumour, self).__init__()
 
         self.cls_num_list = deepcopy(cls_num_list)

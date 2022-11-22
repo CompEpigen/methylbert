@@ -263,6 +263,5 @@ class MethylBertFinetuneDataset(MethylBertDataset):
 		item["dna_seq"] = torch.cat((torch.tensor([self.vocab.sos_index]), item["dna_seq"]))
 		item["methyl_seq"] = torch.cat((torch.tensor([2]), item["methyl_seq"]))
 		item["is_cpg"] = torch.cat((torch.tensor([0]), item["is_cpg"])).to(torch.long)
-
 		return item
 	

@@ -17,7 +17,7 @@ import os
 
 
 
-def get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, decrease_steps=100000, last_epoch=-1):
+def get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, decrease_steps, last_epoch=-1):
     # From DNABERT code
     """ Create a schedule with a learning rate that decreases linearly after
     linearly increasing during a warmup period.
@@ -82,8 +82,8 @@ class MethylBertTrainer(object):
         self.train_data = train_dataloader
             
         # Setup cuda device for BERT training, argument -c, --cuda should be true
-        cuda_condition = torch.cuda.is_available() and self._config.with_cuda
-        self.device = torch.device("cuda:0" if cuda_condition else "cpu")
+        self._config.amp = torch.cuda.is_available() and self._config.with_cuda
+        self.device = torch.device("cuda:0" if self._config.amp else "cpu")
 
         self.test_data = test_dataloader
 
@@ -434,41 +434,20 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
             data = {key: value.to(self.device) for key, value in batch.items() if type(value) != list}
             with torch.no_grad():
 
-                if self._config.amp:
-                    with autocast():
-                        mask_lm_output = self.model.forward(step=self.step,
-                                                input_ids = data["dna_seq"],
-                                                #token_type_ids=data["is_cpg"],
-                                                labels = data["dmr_label"],
-                                                methyl_seqs=data["methyl_seq"],
-                                                ctype_label=data["ctype_label"]) if dmr_loss else self.model.forward(input_ids = data["dna_seq"])
-                else:
+                with autocast(enabled=self._config.amp):
                     mask_lm_output = self.model.forward(step=self.step,
-                                                input_ids = data["dna_seq"],
-                                                #token_type_ids=data["is_cpg"],
-                                                labels = data["dmr_label"],
-                                                methyl_seqs=data["methyl_seq"],
-                                                ctype_label=data["ctype_label"]) if dmr_loss else self.model.forward(input_ids = data["dna_seq"])
-
+                                            input_ids = data["dna_seq"],
+                                            #token_type_ids=data["methyl_seq"],
+                                            labels = data["dmr_label"],
+                                            methyl_seqs=data["methyl_seq"],
+                                            ctype_label=data["ctype_label"]) if dmr_loss else self.model.forward(input_ids = data["dna_seq"])
                 if dmr_loss:
-                    #mean_loss += mask_lm_output[0].mean().item()/len(data_loader) 
                     mean_loss += mask_lm_output["loss"].mean().item()/len(data_loader) 
-                #bert_features = mask_lm_output[2][-1]
-                #bert_features= torch.flatten(mask_lm_output[2][-1], 1) if dmr_loss else torch.flatten(mask_lm_output[1][-1], 1) #mask_lm_output[1]
-
+                
                 # Concatenate predicted sequences for the evaluation 
                 predict_res["pred_dmr_label"].append(np.argmax(mask_lm_output["dmr_logits"].cpu().detach(), axis=-1) if dmr_loss else "NA")
                 predict_res["dmr_label"].append(data["dmr_label"].cpu().detach())
                 
-                # Cell-type classification 
-
-                '''
-                rclass_output = self.classification_model.forward(bert_features=bert_features, 
-                                                   methyl_seqs = data["methyl_seq"], 
-                                                   labels = data["ctype_label"])
-                
-                mean_loss += rclass_output[0].mean().item()/len(data_loader)
-                '''
                 predict_res["pred_ctype_label"].append(np.argmax(mask_lm_output["classification_logits"].cpu().detach(), axis=-1))
                 predict_res["ctype_label"].append(data["ctype_label"].cpu().detach())
 
@@ -538,39 +517,21 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
 
                 start = time.time()
 
-                if self._config.amp:
-                    with autocast():
+                with autocast(enabled=self._config.amp):
                         mask_lm_output = self.model.forward(step=self.step,
                                                 input_ids = data["dna_seq"],
-                                                #token_type_ids=data["is_cpg"],
+                                                #token_type_ids=data["methyl_seq"],
                                                 labels = data["dmr_label"],
                                                 methyl_seqs=data["methyl_seq"],
                                                 ctype_label=data["ctype_label"]) if dmr_loss else self.model.forward(input_ids = data["dna_seq"])
-                else:
-                    mask_lm_output = self.model.forward(step=self.step,
-                                                input_ids = data["dna_seq"],
-                                                #token_type_ids=data["is_cpg"],
-                                                labels = data["dmr_label"],
-                                                methyl_seqs=data["methyl_seq"],
-                                                ctype_label=data["ctype_label"]) if dmr_loss else self.model.forward(input_ids = data["dna_seq"])
-
-                #print("forward : ", GPUtil.showUtilization())
                 loss = mask_lm_output["loss"]#mask_lm_output.loss 
 
-                #bert_features=torch.flatten(mask_lm_output[2][-1], 1) if dmr_loss else torch.flatten(mask_lm_output[1][-1], 1)
-                #bert_features = mask_lm_output[2][-1]
                 # Concatenate predicted sequences for the evaluation 
                 train_prediction_res["pred_dmr_label"].append(np.argmax(mask_lm_output["dmr_logits"].cpu().detach(), axis=-1) if dmr_loss else "NA")
                 train_prediction_res["dmr_label"].append(data["dmr_label"].cpu().detach())
 
 
                 # Cell-type classification 
-                '''
-                rclass_output = self.classification_model.forward(bert_features=bert_features, 
-                                                   methyl_seqs = data["methyl_seq"], 
-                                                   labels = data["ctype_label"])
-                rclass_loss = rclass_output[0]
-                '''
                 train_prediction_res["pred_ctype_label"].append(np.argmax(mask_lm_output["classification_logits"].cpu().detach(), axis=-1))
                 train_prediction_res["ctype_label"].append(data["ctype_label"].cpu().detach())
 
@@ -581,22 +542,12 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                     loss = loss/self._config.gradient_accumulation_steps
                     scaler.scale(loss).backward(retain_graph=True) if self._config.amp else loss.backward(retain_graph=True)
 
-                '''
-                if "cuda" in self.device.type:
-                    rclass_loss = rclass_loss.mean()
-                
-                rclass_loss = rclass_loss/self._config.gradient_accumulation_steps
-                scaler.scale(rclass_loss).backward(retain_graph=True) if self._config.amp else rclass_loss.backward(retain_graph=True)
-                '''
                 global_step_loss += loss.item()
                 duration += time.time() - start
 
                 # Gradient accumulation 
                 if (local_step+1) % self._config.gradient_accumulation_steps == 0:
-                    #if torch.cuda.device_count() > 1:
-                    #    nn.utils.clip_grad_norm_(amp.master_params(self.optim), self.max_grad_norm)
-                    #else:
-
+                    
                     if self._config.amp:
                         scaler.unscale_(self.optim)
                         nn.utils.clip_grad_norm_(self.model.parameters(), self._config.max_grad_norm)
@@ -608,7 +559,6 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                         
                     self.scheduler.step()
                     self.model.zero_grad()
-                    #self.classification_model.zero_grad()
                     
                     # Evaluation with both train and testdata
                                         
