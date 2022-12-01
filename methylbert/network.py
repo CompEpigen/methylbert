@@ -111,7 +111,6 @@ class CNNClassification(nn.Module):
         methyl_seqs = methyl_seqs[:, :, None]
 
         x =  torch.cat((bert_features.to(torch.float32), methyl_seqs), axis=-1)
-        print(bert_features.shape, methyl_seqs.shape, x.shape)
 
         features = self.model(x)
         logits  = self.classifier(torch.flatten(features, 1))
@@ -153,6 +152,7 @@ class MethylBertForSequenceClassification(BertPreTrainedModel):
             print("Loss function is %s, and the given class sizes :"%(self.loss), self.n_classes)
         else:
             print("Loss function is %s"%(self.loss))
+            
     def from_pretrained_read_classifier(self, pretrained_model_name_or_path, device="cpu"):
         self.read_classifier.load_state_dict(torch.load(pretrained_model_name_or_path, map_location=device))
         #self.loss = self.config.loss
@@ -274,7 +274,7 @@ class MethylBertForMergedClassification(BertPreTrainedModel):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, self.config.num_labels)
 
-        self.ctype_classifier = nn.Linear(config.hidden_size, 2)
+        self.read_classifier = nn.Linear(config.hidden_size * (seq_len+1), 2)
         self.init_weights()
 
     def set_loss(self, loss="bce", n_classes=None, device="cpu"):
@@ -350,13 +350,15 @@ class MethylBertForMergedClassification(BertPreTrainedModel):
             position_ids=position_ids,
             head_mask=head_mask,
             inputs_embeds=inputs_embeds,
-        )
+        ) # sequence_output, pooled_output, (hidden_states), (attentions)
         
         pooled_output = outputs[1]
 
         pooled_output = self.dropout(pooled_output)
         logits = self.classifier(pooled_output)
-        ctype_logits = self.ctype_classifier(pooled_output)
+
+        sequence_output=outputs[0].view(-1,151*768)
+        ctype_logits = self.read_classifier(sequence_output)
 
         outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
 
@@ -364,7 +366,7 @@ class MethylBertForMergedClassification(BertPreTrainedModel):
             classification_loss_fct = LDAMLoss(cls_num_list = self.n_classes)
         elif self.loss == "ldamt":
             classification_loss_fct = LDAMLoss_tumour(cls_num_list = self.n_classes, device="cuda:0")
-            binary_loss = classification_loss_fct(ctype_logits.view(-1, 2), 
+            binary_loss = classification_loss_fct(nn.Sigmoid()(ctype_logits).view(-1, 2), 
             ctype_label)
         elif self.loss == "hinge":
             classification_loss_fct = nn.HingeEmbeddingLoss()
@@ -388,6 +390,96 @@ class MethylBertForMergedClassification(BertPreTrainedModel):
                    "loss": loss,
                    "classification_logits": ctype_logits,
                    "attentions": outputs[-1]}
+
+        return outputs  # (loss), logits, (hidden_states), (attentions)
+
+
+
+class MethylBertEmbeddedDMR(BertPreTrainedModel):
+    def __init__(self, config, seq_len=150, loss="bce"):
+        super().__init__(config)
+        self.num_labels = config.num_labels
+
+        self.bert = BertModel(config)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.read_classifier = nn.Linear((config.hidden_size+1)*(seq_len+1), 2)
+
+        self.dmr_encoder = nn.Sequential(
+            nn.Embedding(num_embeddings=100, embedding_dim = seq_len+1),
+            nn.Dropout(p=0.1),
+            nn.Linear(in_features=seq_len+1, out_features=seq_len+1, bias=True),
+        )
+
+        self.init_weights()
+
+    def set_loss(self, loss="bce", n_classes=None, device="cpu"):
+        #self.device=device
+        self.loss = loss
+        if "ldam" in loss:
+            self.n_classes=n_classes
+            print("Loss function is %s, and the given class sizes :"%(self.loss), self.n_classes)
+        else:
+            print("Loss function is %s"%(self.loss))
+
+    def from_pretrained_read_classifier(self, pretrained_model_name_or_path, device="cpu"):
+        self.read_classifier.load_state_dict(torch.load(pretrained_model_name_or_path, map_location=device))
+        
+    def from_pretrained_dmr_encoder(self, pretrained_model_name_or_path, device="cpu"):
+        self.dmr_encoder.load_state_dict(torch.load(pretrained_model_name_or_path, map_location=device))
+        
+
+    def forward(
+        self,
+        step,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        labels=None,
+        methyl_seqs=None,
+        ctype_label=None
+    ):
+        
+        outputs = self.bert(
+            input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+        )
+        
+        sequence_output = outputs[0]
+        sequence_output = self.dropout(sequence_output)
+
+        #DMR info 
+        encoded_dmr = self.dmr_encoder(labels.view(-1))
+
+        sequence_output =  torch.cat((sequence_output, encoded_dmr.unsqueeze(-1)), axis=-1)
+
+        ctype_logits = self.read_classifier(sequence_output.view(-1,151*769))
+
+        if self.loss == "ldam" :
+            classification_loss_fct = LDAMLoss(cls_num_list = self.n_classes)
+        elif self.loss == "ldamt":
+            classification_loss_fct = LDAMLoss_tumour(cls_num_list = self.n_classes, device="cuda:0")
+            binary_loss = classification_loss_fct(nn.Sigmoid()(ctype_logits).view(-1, 2), 
+            ctype_label)
+        elif self.loss == "hinge":
+            classification_loss_fct = nn.HingeEmbeddingLoss()
+            binary_loss = classification_loss_fct(torch.argmax(ctype_logits, axis=-1), 
+            (ctype_label*2-1))
+
+        else:
+            classification_loss_fct = nn.BCEWithLogitsLoss()
+            binary_loss = classification_loss_fct(ctype_logits.view(-1, 2), 
+            nn.functional.one_hot(ctype_label, num_classes=2).to(torch.float32).view(-1, 2))
+        loss = binary_loss
+
+        outputs = {"loss": loss,
+                   "classification_logits": ctype_logits}
 
         return outputs  # (loss), logits, (hidden_states), (attentions)
 
