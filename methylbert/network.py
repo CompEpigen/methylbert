@@ -277,6 +277,8 @@ class MethylBertForMergedClassification(BertPreTrainedModel):
         self.read_classifier = nn.Linear(config.hidden_size * (seq_len+1), 2)
         self.init_weights()
 
+        #self.bert.embeddings.token_type_embeddings = nn.Embedding(3, 768)
+
     def set_loss(self, loss="bce", n_classes=None, device="cpu"):
         #self.device=device
         self.loss = loss
@@ -402,12 +404,19 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
 
         self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.read_classifier = nn.Linear((config.hidden_size+1)*(seq_len+1), 2)
+        self.read_classifier = nn.Sequential(
+            nn.Linear((config.hidden_size+1)*(seq_len+1), seq_len+1),
+            nn.Dropout(0.05),#config.hidden_dropout_prob),
+            nn.ReLU(),
+            nn.LayerNorm(seq_len+1, eps=config.layer_norm_eps),
+            nn.Linear(seq_len+1, 2)
+        )
+
 
         self.dmr_encoder = nn.Sequential(
             nn.Embedding(num_embeddings=100, embedding_dim = seq_len+1),
-            nn.Dropout(p=0.1),
-            nn.Linear(in_features=seq_len+1, out_features=seq_len+1, bias=True),
+            #nn.Dropout(p=0.1),
+            #nn.Linear(in_features=seq_len+1, out_features=seq_len+1, bias=True),
         )
 
         self.init_weights()
@@ -479,6 +488,7 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
         loss = binary_loss
 
         outputs = {"loss": loss,
+                    "dmr_logits":sequence_output,
                    "classification_logits": ctype_logits}
 
         return outputs  # (loss), logits, (hidden_states), (attentions)
