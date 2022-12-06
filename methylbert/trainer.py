@@ -177,15 +177,17 @@ class MethylBertTrainer(object):
         :param label: ground-truth tokens
         """
 
-        # Calculate accuracy only on the masked tokens
         if type(pred).__module__ != np.__name__:
             pred = pred.numpy()
         if type(label).__module__ != np.__name__:
             label = label.numpy()
 
-        return accuracy_score(y_true=label, y_pred=pred)#auc(fpr, tpr) #np.sum(gt==pred)/len(gt)
+        if len(pred.shape) > 1:
+            pred = pred.flatten()
+        if len(label.shape) > 1:
+            label = label.flatten()
 
-
+        return accuracy_score(y_true=label, y_pred=pred)
 
 
 class MethylBertPretrainTrainer(MethylBertTrainer):
@@ -202,6 +204,11 @@ class MethylBertPretrainTrainer(MethylBertTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         pass
+    def create_model(self, *args, **kwargs):
+        config = BertConfig(vocab_size = len(self.train_data.dataset.vocab), *args, **kwargs)
+    
+        self.bert = BertForMaskedLM(config)
+        self._setup_model()
 
     def _eval_iteration(self, data_loader):
         """
@@ -347,7 +354,9 @@ class MethylBertPretrainTrainer(MethylBertTrainer):
                     if self.test_data is not None and self.step % self._config.eval_freq == 0 and self.step > 0:
                         
                         test_pred, test_loss = self._eval_iteration(self.test_data)
-                        test_pred_acc = self._acc(test_pred["prediction"], test_pred["label"])
+                        idces = np.where(test_pred["label"]>=0)
+                        test_pred_acc = self._acc(test_pred["prediction"][idces[0], idces[1]], 
+                                                  test_pred["label"][idces[0], idces[1]])
 
                         with open(self.save_path.split(".")[0]+"_eval.csv", "a") as f_perform:
                             f_perform.write("\t".join([str(self.step), str(test_pred_acc), str(test_loss)]) +"\n")
@@ -368,7 +377,10 @@ class MethylBertPretrainTrainer(MethylBertTrainer):
 
                         train_prediction_res["prediction"] = np.concatenate(train_prediction_res["prediction"], axis=0)
                         train_prediction_res["label"] = np.concatenate(train_prediction_res["label"],  axis=0)
-                        train_pred_acc = self._acc(train_prediction_res["prediction"], train_prediction_res["label"])
+
+                        idces = np.where(train_prediction_res["label"]>=0)
+                        train_pred_acc = self._acc(train_prediction_res["prediction"][idces[0], idces[1]], 
+                            train_prediction_res["label"][idces[0], idces[1]])
                         
                         f_perform.write("\t".join([str(self.step), str(global_step_loss), str(train_pred_acc), str(self.optim.param_groups[0]["lr"])])+"\n")
 
@@ -450,7 +462,7 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                                             ctype_label=data["ctype_label"]) if dmr_loss else self.model.forward(input_ids = data["dna_seq"])
                 if dmr_loss:
                     mean_loss += mask_lm_output["loss"].mean().item()/len(data_loader) 
-                if "dmr_logits" in mask_lm_output.keys():
+                if self._config.methyl_learning != "dmr_embedding":
                     # Concatenate predicted sequences for the evaluation 
                     predict_res["pred_dmr_label"].append(np.argmax(mask_lm_output["dmr_logits"].cpu().detach(), axis=-1) if dmr_loss else "NA")
                 predict_res["dmr_label"].append(data["dmr_label"].cpu().detach())
@@ -535,7 +547,7 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                 loss = mask_lm_output["loss"]
 
                 # Concatenate predicted sequences for the evaluation 
-                if "dmr_logits" in mask_lm_output.keys():
+                if self._config.methyl_learning != "dmr_embedding":
                     train_prediction_res["pred_dmr_label"].append(np.argmax(mask_lm_output["dmr_logits"].cpu().detach(), axis=-1) if dmr_loss else "NA")
                 train_prediction_res["dmr_label"].append(data["dmr_label"].cpu().detach())
 
@@ -575,7 +587,7 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                         
                         test_pred, test_loss = self._eval_iteration(self.test_data, dmr_loss=dmr_loss)
 
-                        if "pred_dmr_label" in test_pred.keys():
+                        if self._config.methyl_learning != "dmr_embedding":
                             test_dmr_acc = self._acc(test_pred["pred_dmr_label"], test_pred["dmr_label"]) if dmr_loss else 0.0
                         else:
                             test_dmr_acc = 0
@@ -607,7 +619,7 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                     with open(self.save_path.split(".")[0]+"_train.csv", "a") as f_perform:
 
                         train_prediction_res["dmr_label"] = np.concatenate(train_prediction_res["dmr_label"],  axis=0)
-                        if len(train_prediction_res["pred_dmr_label"]) > 0:
+                        if self._config.methyl_learning != "dmr_embedding":
                             train_prediction_res["pred_dmr_label"] = np.concatenate(train_prediction_res["pred_dmr_label"], axis=0) if dmr_loss else np.zeros(train_prediction_res["dmr_label"].shape)
                             train_dmr_acc = self._acc(train_prediction_res["pred_dmr_label"], train_prediction_res["dmr_label"]) if dmr_loss else 0.0
                         else:
@@ -651,6 +663,7 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
     def load(self, file_path: str, n_dmrs=None):
         print("Restore the pretrained model")
         print("Methylation patterns will be learnt via ", self._config.methyl_learning)
+
         if self._config.methyl_learning == "cnn":
             self.bert = MethylBertForSequenceClassification.from_pretrained(file_path, 
                 num_labels=self.train_data.dataset.num_dmrs() if not n_dmrs else n_dmrs, 
@@ -682,4 +695,5 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
             self.bert.from_pretrained_read_classifier(os.path.dirname(file_path)+"/read_classification_cnn.pickle", self.device)
         self.bert.set_loss(loss = self.loss, 
                            n_classes = torch.tensor(self.train_data.dataset.ctype_label_count, dtype=torch.int64), device=self.device)
+
         self._setup_model()

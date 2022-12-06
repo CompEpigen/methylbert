@@ -6,6 +6,7 @@ from copy import deepcopy
 import multiprocessing as mp
 from functools import partial
 import random
+from tqdm import tqdm
 
 from methylbert.data.vocab import WordVocab
 
@@ -54,6 +55,8 @@ def _line2tokens_finetune(l, tokenizer, max_len=120, headers=None):
 		l["dna_seq"] = l["dna_seq"]+[[tokenizer.pad_index] for k in range(max_len-cur_seq_len)]
 		l["methyl_seq"] = l["methyl_seq"] + [2 for k in range(max_len-cur_seq_len)]
 
+	#if 'pbar' in globals():
+	pbar.update(1)
 	return l
 
 class MethylBertDataset(Dataset):
@@ -83,6 +86,9 @@ class MethylBertPretrainDataset(MethylBertDataset):
 		print("Total number of sequences : ", len(raw_seqs))
 
 		# Multiprocessing for the sequence tokenisation
+		global pbar 
+		pbar = tqdm(total=len(raw_seqs))
+		print("is pbar in globals : ",'pbar' in globals())
 		with mp.Pool(n_cores) as pool:
 			line_labels = pool.map(partial(_line2tokens, tokenizer=self.vocab, max_len=self.seq_len), raw_seqs)
 			del raw_seqs
@@ -106,9 +112,9 @@ class MethylBertPretrainDataset(MethylBertDataset):
 		# Mask 
 		masked_dna_seq, dna_seq, bert_mask = self._masking(dna_seq)
 		
-		return {"input": masked_dna_seq,
-				"label": dna_seq,
-				"mask" : bert_mask}
+		return {"bert_input": masked_dna_seq,
+				"bert_label": dna_seq,
+				"bert_mask" : bert_mask}
 	
 	def subset_data(self, n_seq: int):
 		self.lines = random.sample(self.lines, n_seq)
@@ -163,7 +169,7 @@ class MethylBertPretrainDataset(MethylBertDataset):
 
 		new_centers = deepcopy(mask_centers)
 		for center in mask_centers:
-			for mask_number in self._mask_list:# add neighbour loci 
+			for mask_number in self.mask_list:# add neighbour loci 
 				current_index = center + mask_number 
 				if current_index <= end and current_index >= 1:
 					new_centers.add(current_index)
@@ -180,7 +186,7 @@ class MethylBertPretrainDataset(MethylBertDataset):
 
 		# 10% of the time, we replace masked input tokens with random word
 		indices_random = torch.bernoulli(torch.full(labels.shape, 0.5)).bool() & masked_indices & ~indices_replaced
-		random_words = torch.randint(len(self.vocab), labels.shape, dtype=torch.int32)
+		random_words = torch.randint(len(self.vocab), labels.shape, dtype=torch.int16)
 		inputs[indices_random] = random_words[indices_random]
 
 		# The rest of the time (10% of the time) we keep the masked input tokens unchanged
