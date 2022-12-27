@@ -6,7 +6,6 @@ from copy import deepcopy
 import multiprocessing as mp
 from functools import partial
 import random
-from tqdm import tqdm
 
 from methylbert.data.vocab import WordVocab
 
@@ -55,8 +54,6 @@ def _line2tokens_finetune(l, tokenizer, max_len=120, headers=None):
 		l["dna_seq"] = l["dna_seq"]+[[tokenizer.pad_index] for k in range(max_len-cur_seq_len)]
 		l["methyl_seq"] = l["methyl_seq"] + [2 for k in range(max_len-cur_seq_len)]
 
-	#if 'pbar' in globals():
-	pbar.update(1)
 	return l
 
 class MethylBertDataset(Dataset):
@@ -86,9 +83,6 @@ class MethylBertPretrainDataset(MethylBertDataset):
 		print("Total number of sequences : ", len(raw_seqs))
 
 		# Multiprocessing for the sequence tokenisation
-		global pbar 
-		pbar = tqdm(total=len(raw_seqs))
-		print("is pbar in globals : ",'pbar' in globals())
 		with mp.Pool(n_cores) as pool:
 			line_labels = pool.map(partial(_line2tokens, tokenizer=self.vocab, max_len=self.seq_len), raw_seqs)
 			del raw_seqs
@@ -101,17 +95,18 @@ class MethylBertPretrainDataset(MethylBertDataset):
 		dna_seq = self.lines[index].clone()
 
 		# Random len
-		if self.random_len and index % 2 == 0:
+		if self.random_len and np.random.random() < 0.5:
 			dna_seq = dna_seq[:random.randint(5, self.seq_len)] 
 		
 		# Padding
 		if dna_seq.shape[0] < self.seq_len:
-			pad_num = self.seq_len+2-dna_seq.shape[0]
+			pad_num = self.seq_len-dna_seq.shape[0]
 			dna_seq = torch.cat((dna_seq, 
-								torch.tensor([self.vocab.pad_index for i in range(pad_num)])))
+								torch.tensor([self.vocab.pad_index for i in range(pad_num)], dtype=torch.int16)))
+
 		# Mask 
 		masked_dna_seq, dna_seq, bert_mask = self._masking(dna_seq)
-		
+		#print(dna_seq, masked_dna_seq,"\n=============================================\n")
 		return {"bert_input": masked_dna_seq,
 				"bert_label": dna_seq,
 				"bert_mask" : bert_mask}
@@ -155,10 +150,10 @@ class MethylBertPretrainDataset(MethylBertDataset):
 			val < 5 for val in labels.tolist()
 		]
 		probability_matrix.masked_fill_(torch.tensor(special_tokens_mask, dtype=torch.bool), value=0.0)
-		padding_mask = labels.eq(self.vocab.pad_index)
-		probability_matrix.masked_fill_(padding_mask, value=0.0)
+		#padding_mask = labels.eq(self.vocab.pad_index)
+		#probability_matrix.masked_fill_(padding_mask, value=0.0)
 
-		masked_indices = torch.bernoulli(probability_matrix).bool() # get bernoulli for non-special token masks
+		masked_indices = torch.bernoulli(probability_matrix).bool() # get masked tokens based on bernoulli only within non-special tokens		
 
 		# change masked indices
 		masked_index = deepcopy(masked_indices)
@@ -171,10 +166,12 @@ class MethylBertPretrainDataset(MethylBertDataset):
 		for center in mask_centers:
 			for mask_number in self.mask_list:# add neighbour loci 
 				current_index = center + mask_number 
-				if current_index <= end and current_index >= 1:
+				if current_index <= end and current_index >= 0:
 					new_centers.add(current_index)
 
 		new_centers = list(new_centers)
+		#print(labels, masked_indices.int(), labels.shape, end, new_centers)
+		
 		masked_indices[new_centers] = True
 		
 		# Avoid loss calculation on unmasked tokens

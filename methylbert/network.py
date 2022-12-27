@@ -120,16 +120,6 @@ class CNNClassification(nn.Module):
         
         return outputs
 
-class MethylseqFeature(CNNClassification):
-    def __init__(self, seq_len, bert_feature_shape, n_hidden):
-        self.seq_len = seq_len
-        self.bert_feature_shape = bert_feature_shape
-
-        # Methylation sequence embedding
-        self.embedding = nn.Sequential(
-            nn.conv2D(in_channels = 1, out_channels=self.bert_feature_shape, )
-        )
-
 
 class MethylBertForSequenceClassification(BertPreTrainedModel):
     def __init__(self, config, seq_len=150, loss="bce"):
@@ -156,7 +146,8 @@ class MethylBertForSequenceClassification(BertPreTrainedModel):
     def from_pretrained_read_classifier(self, pretrained_model_name_or_path, device="cpu"):
         self.read_classifier.load_state_dict(torch.load(pretrained_model_name_or_path, map_location=device))
         #self.loss = self.config.loss
-        
+
+
     def forward(
         self,
         step,
@@ -420,6 +411,12 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
         )
 
         self.init_weights()
+
+    def check_model_status(self):
+        print("Bert model training mode : %s"%(self.bert.training))
+        print("Dropout training mode : %s"%(self.dropout.training))
+        print("Read classifier training mode : %s"%(self.read_classifier.training))
+        
 
     def set_loss(self, loss="bce", n_classes=None, device="cpu"):
         #self.device=device

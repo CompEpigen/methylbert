@@ -114,12 +114,11 @@ class MethylBertTrainer(object):
                                lr=self._config.lr, betas=self._config.beta, eps=self._config.eps, weight_decay=self._config.weight_decay)
 
         # Distributed GPU training if CUDA can detect more than 1 GPU
-
         if self._config.with_cuda and torch.cuda.device_count() > 1:
-            print("Using %d GPUS for BERT" % torch.cuda.device_count())
+            print("Using %d GPUs for BERT" % torch.cuda.device_count())
             self.model = nn.DataParallel(self.model)
 
-    def train(self, steps=0, warm_up=0):
+    def train(self, steps=0):
         return self._iteration(steps, self.train_data)
 
     def test(self, test_dataloader):
@@ -129,12 +128,13 @@ class MethylBertTrainer(object):
 
     def load(self, file_path):
         print("Restore the pretrained model")
-        self.bert = BertForMaskedLM.from_pretrained(file_path, #BertForSequenceClassification.from_pretrained(args.pretrain, 
+        self.bert = BertForMaskedLM.from_pretrained(file_path, 
             num_labels=self.train_data.dataset.num_dmrs(), 
             output_attentions=True, 
             output_hidden_states=True, 
             hidden_dropout_prob=0.01, 
             vocab_size = len(self.train_data.dataset.vocab))
+
         # Initialize the BERT Language Model, with BERT model
         self._setup_model()
 

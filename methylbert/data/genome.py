@@ -36,29 +36,38 @@ def pretrain_data_preprocess(f_ref, k=3, seq_len=510, f_output=None):
     fp_out = open(f_output, "w")
     line = fp_ref.readline().strip().upper()
     cur_line="" # keeping an incomplete N bp line
+    collect_data=False
+    valid_chromosomes = ["CHR"+str(i) for i in range(22)]
+    valid_chromosomes += ["CHRX", "CHRY"]
     
     while line:
         n_missing = line.count("N")
-        if n_missing == len(line):
-            # No DNA base in the line 
-            line = fp_ref.readline().strip().upper()
+
+        if n_missing > 0:
+            # Missing DNA base in the line -> reset the line 
+            #line = fp_ref.readline().strip().upper()
+            line=fp_ref.readline().strip().upper()
+            cur_line=""
             continue
         elif ( line.count(">") > 0 ):
             # New chromosome or there are some missing bases at the middle
             # We restart a 510 bp piece
+            chromosome = line.split(">")[1]
+            collect_data = chromosome in valid_chromosomes
+            if collect_data:
+                print("Collect sequences in %s"%(chromosome))
             line = fp_ref.readline().strip().upper()
             cur_line = "" 
             continue
 
-        cur_line += line
-        line_length = len(cur_line)
-
-        if line_length >= seq_len:
-            new_line = cur_line[:seq_len]
-            cur_line = cur_line[seq_len:]
-            sentence = _kmers(new_line, kmer=k)
-            
-            fp_out.write(sentence + "\n")
+        if collect_data:
+            cur_line += line
+            line_length = len(cur_line)
+            if line_length >= seq_len:
+                new_line = cur_line[:seq_len]
+                cur_line = cur_line[seq_len:]
+                sentence = _kmers(new_line, kmer=k)
+                fp_out.write(sentence + "\n")
 
         # get a new line 
         line = fp_ref.readline().strip().upper()
