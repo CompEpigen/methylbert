@@ -185,7 +185,11 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
             reads.update(read_tags)
             processed_reads.append(reads)
         
-        return pd.DataFrame(processed_reads).drop(columns=["tags"])
+        processed_reads = pd.DataFrame(processed_reads)
+        if "tags" in processed_reads.keys():
+            processed_reads = processed_reads.drop(columns=["tags"])
+
+        return processed_reads
         
     @globalize
     def _get_methylseq(dmr, bam_file_path, k, single_end):
@@ -206,19 +210,24 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
 
         processed_reads = _reads_overlapping(aln, dmr["chr"], int(dmr["start"]), int(dmr["end"]), single_end)
 
-        processed_reads["dmr_ctype"] = dmr["ctype"]
-        processed_reads["dmr_label"] = dmr["dmr_id"]
+        if processed_reads.shape[0] > 0:
+            processed_reads = processed_reads.assign(dmr_ctype = dmr["ctype"],
+                                                     dmr_label = dmr["dmr_id"])
+            return processed_reads
 
-        return processed_reads
     
     with mp.Pool(ncores) as pool:
         # Convert sequences to K-mers
         seqs = pool.map(partial(_get_methylseq, 
                                 bam_file_path = bam_file_path, 
                                 k=k, single_end=single_end), 
-        dmrs.to_dict("records"))
+                        dmrs.to_dict("records"))
     
-    return pd.concat(seqs, ignore_index=True)
+    # Filter None values that means no overlapping read with the given DMR
+
+    seqs = list(filter(lambda i: i is not None, seqs))
+    if len(seqs) > 0:
+        return pd.concat(seqs, ignore_index=True)
 
 
 
@@ -292,16 +301,18 @@ def finetune_data_generate(args):
 
     for f_sc in sc_files:
         f_sc = f_sc.strip().split("\t")
-        f_sc = f_sc[0]
+        f_sc_bam = f_sc[0]
 
         if len(f_sc) > 1:
             f_sc_ctype = f_sc[1]
-            print("%s processing (%s)..."%(f_sc, f_sc_ctype))
+            print("%s processing (%s)..."%(f_sc_bam, f_sc_ctype))
         else:
-             print("%s processing..."%f_sc)
+             print("%s processing..."%f_sc_bam)
 
-        extracted_reads = read_extract(f_sc, dict_ref, k=3, dmrs=dmrs, ncores=args.n_cores)
-        
+        extracted_reads = read_extract(f_sc_bam, dict_ref, k=3, dmrs=dmrs, ncores=args.n_cores)
+        if extracted_reads is None:
+            continue
+
         # cell type for the single-cell data
         if "RG" in extracted_reads.columns:
             extracted_reads = extracted_reads.rename(columns={"RG":"read_ctype"})
@@ -309,7 +320,9 @@ def finetune_data_generate(args):
         else:
             extracted_reads["ctype"] = f_sc_ctype
         extracted_reads = extracted_reads.rename(columns={"RF":"dna_seq", "ME":"methyl_seq"})
-        df_reads.append(extracted_reads)
+
+        if(extracted_reads.shape[0] > 0):
+            df_reads.append(extracted_reads)
 
     # Integrate all reads and shuffle
     df_reads = pd.concat(df_reads, ignore_index=True).sample(frac=1).reset_index(drop=True)
