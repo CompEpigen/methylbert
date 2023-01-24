@@ -269,17 +269,18 @@ def finetune_data_generate(args):
         del list_dmrs
 
     
-    # Newly assign dmr label from 0
-    dmrs["dmr_id"] = range(len(dmrs))
 
     # Sort by statistics if available
     if "areaStat" in dmrs.keys():
         print("DMRs sorted by areaStat")
-        dmrs = dmrs.sort_values(by="areaStat")
+        dmrs = dmrs.sort_values(by="areaStat", ascending=False)
     elif "diff.Methy" in dmrs.keys():
         print("DMRs sorted by diff.Methy")
-        dmrs = dmrs.sort_values(by="diff.Methy")
-        
+        dmrs = dmrs.sort_values(by="diff.Methy", ascending=False)
+
+
+    # Newly assign dmr label from 0
+    dmrs["dmr_id"] = range(len(dmrs))
     dmrs.to_csv(fp_dmr, sep="\t", index=False)
     print(dmrs)
 
