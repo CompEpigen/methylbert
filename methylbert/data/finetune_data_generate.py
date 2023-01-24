@@ -11,9 +11,6 @@ from Bio import SeqIO
 
 import pickle, pysam, os, glob, random, re, time
 
-non_assign_chars = ["h","H", "x", "X"]
-
-
 def arg_parser():
     parser = argparse.ArgumentParser()
 
@@ -255,7 +252,7 @@ def finetune_data_generate(args):
     # Load DMRs into a data frame
     dmrs = pd.read_csv(args.f_dmr, sep="\t", index_col=None)
 
-    # Remove chrX, chrY, chrM in DMRs
+    # Remove chrX, chrY, chrM and so on in DMRs
     regex_expr = "chr\d+"
     dmrs = dmrs[dmrs["chr"].str.contains(regex_expr, regex=True)]
 
@@ -274,6 +271,15 @@ def finetune_data_generate(args):
     
     # Newly assign dmr label from 0
     dmrs["dmr_id"] = range(len(dmrs))
+
+    # Sort by statistics if available
+    if "areaStat" in dmrs.keys():
+        print("DMRs sorted by areaStat")
+        dmrs = dmrs.sort_values(by="areaStat")
+    elif "diff.Methy" in dmrs.keys():
+        print("DMRs sorted by diff.Methy")
+        dmrs = dmrs.sort_values(by="diff.Methy")
+        
     dmrs.to_csv(fp_dmr, sep="\t", index=False)
     print(dmrs)
 
