@@ -44,7 +44,7 @@ def read_classification(data_loader, trainer, output_dir, save_logit):
 		# prediction results from the model 
 		mask_lm_output = trainer.model.forward(step=2000,
 												input_ids = data["dna_seq"],
-												token_type_ids=data["is_mehthyl"],
+												token_type_ids=data["is_mehthyl"] if trainer.bert.config.type_vocab_size == 2 else data["methyl_seq"],
 												labels = data["dmr_label"],
 												methyl_seqs=data["methyl_seq"],
 												ctype_label=data["ctype_label"])
@@ -153,5 +153,6 @@ if __name__=="__main__":
 
 	# Deconvolution
 	tumour_pred_ratio = deconvolve(logits)
-	pd.DataFrame.from_dict({"cell_type":["T", "N"],
+	print("Deconvolution result: ", tumour_pred_ratio)
+	pd.DataFrame.from_dict({"cell_type":["mL2-3", "mL6-2"],
 							"pred":[tumour_pred_ratio, 1 - tumour_pred_ratio]}).to_csv(args.output_path+"/deconvolution.csv", sep="\t", header=True, index=False)

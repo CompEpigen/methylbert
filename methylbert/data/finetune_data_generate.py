@@ -268,19 +268,17 @@ def finetune_data_generate(args):
         dmrs = pd.concat(list_dmrs)
         del list_dmrs
 
-    
-
-    # Sort by statistics if available
-    if "areaStat" in dmrs.keys():
-        print("DMRs sorted by areaStat")
-        dmrs = dmrs.sort_values(by="areaStat", ascending=False)
-    elif "diff.Methy" in dmrs.keys():
-        print("DMRs sorted by diff.Methy")
-        dmrs = dmrs.sort_values(by="diff.Methy", ascending=False)
-
-
     # Newly assign dmr label from 0
-    dmrs["dmr_id"] = range(len(dmrs))
+    if "dmr_id" not in dmrs.keys():
+        # Sort by statistics if available
+        if "areaStat" in dmrs.keys():
+            print("DMRs sorted by areaStat")
+            dmrs = dmrs.sort_values(by="areaStat", ascending=False)
+        elif "diff.Methy" in dmrs.keys():
+            print("DMRs sorted by diff.Methy")
+            dmrs = dmrs.sort_values(by="diff.Methy", ascending=False)
+        dmrs["dmr_id"] = range(len(dmrs))
+
     dmrs.to_csv(fp_dmr, sep="\t", index=False)
     print(dmrs)
 
@@ -323,7 +321,7 @@ def finetune_data_generate(args):
         # cell type for the single-cell data
         if "RG" in extracted_reads.columns:
             extracted_reads = extracted_reads.rename(columns={"RG":"read_ctype"})
-            extracted_reads["ctype"] = [c.split("_")[1] for c in extracted_reads["read_ctype"]]
+            extracted_reads["ctype"] = [c.split("_")[1][:3]+"-"+c.split("_")[1][3] for c in extracted_reads["read_ctype"]]
         else:
             extracted_reads["ctype"] = f_sc_ctype
         extracted_reads = extracted_reads.rename(columns={"RF":"dna_seq", "ME":"methyl_seq"})
@@ -333,6 +331,7 @@ def finetune_data_generate(args):
 
     # Integrate all reads and shuffle
     df_reads = pd.concat(df_reads, ignore_index=True).sample(frac=1).reset_index(drop=True)
+    print("Fine tuning data generated:", df_reads.head())
 
     # Split the data into train and valid/test
     if (args.split_ratio < 1.0) and (args.split_ratio > 0.0):
