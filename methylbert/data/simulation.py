@@ -21,10 +21,11 @@ def arg_parser():
     parser.add_argument("--seed", type=int, default=950410, help="seed number")
 
     # Hyperparameters for pseudo-bulks 
-    parser.add_argument("--bulk", type=bool, default=True, help="Whether you want to generate pseudo-bulks or the entire dataset")
+    parser.add_argument("--bulk", type=bool, default=False, help="Whether you want to generate pseudo-bulks or the entire dataset")
     parser.add_argument("-nb", "--n_bulks", type=int, default=None, help="Number of bulks, Applicable only when --bulk is True")
     parser.add_argument("-s", "--std", type=float, default=0.0, help="Standard deviation to sample local proportions. The larger value is given, the more varied local proportions are sampled from a Gaussian distribution centred at the global proportion")
     parser.add_argument("-t", "--f_gt", type=str, help="tab-separated .csv file, each column should be a proportion for each cell-type. bulk name can be included as dataframe index/row name, only used when n_bulks is not given")
+    parser.add_argument("-n", "--f_output", type=str, default=None, help="output file name")
     
 
     return parser.parse_args()
@@ -77,8 +78,7 @@ def simulation(args):
             
             # Set probability based on mean methylation level for each cell type
             p=dmr["meanMethy1"] if r_ctype=="N" else dmr["meanMethy2"]
-            p = p>0.5
-
+            
             # Methylation pattern
             cpg_loci = [j for j in range(len(r_seq)-2) if r_seq[j:j+2] == "CG"]
 
@@ -106,7 +106,7 @@ def simulation(args):
         # Entire dataset simulation
         if not os.path.exists(args.output_dir):
             os.mkdir(args.output_dir)
-        reads.to_csv(f"{args.output_dir}/data.txt", sep="\t", index=False)
+        reads.to_csv(f"{args.output_dir}/data.txt" if not args.f_output else f"{args.output_dir}/{args.f_output}", sep="\t", index=False)
     else:
         # pseudo_bulk simulation
         ctypes = reads["ctype"].unique()
