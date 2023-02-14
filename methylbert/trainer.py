@@ -426,7 +426,9 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
             self.bert = MethylBertForMergedClassification(config=config)
         elif self._config.methyl_learning == "dmr_embedding":
             self.bert = MethylBertEmbeddedDMR(config=config)
-
+        self.bert.set_loss(loss = self.loss, 
+                           n_classes = torch.tensor(self.train_data.dataset.ctype_label_count, dtype=torch.int64), device=self.device)
+        
         # Initialize the BERT Language Model, with BERT model
         self._setup_model()
 
@@ -456,7 +458,7 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                 with autocast(enabled=self._config.amp):
                     mask_lm_output = self.model.forward(step=self.step,
                                             input_ids = data["dna_seq"],
-                                            token_type_ids=data["is_mehthyl"],
+                                            token_type_ids=data["is_mehthyl"] if self.bert.config.type_vocab_size == 2 else data["methyl_seq"],
                                             labels = data["dmr_label"],
                                             methyl_seqs=data["methyl_seq"],
                                             ctype_label=data["ctype_label"]) if dmr_loss else self.model.forward(input_ids = data["dna_seq"])
@@ -500,7 +502,6 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
         """
         
         self.step = 0
-
         if os.path.exists(self.save_path.split(".")[0]+"_train.csv"):
             os.remove(self.save_path.split(".")[0]+"_train.csv")
 
@@ -540,7 +541,7 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                 with autocast(enabled=self._config.amp):
                     mask_lm_output = self.model.forward(step=self.step,
                                             input_ids = data["dna_seq"],
-                                            token_type_ids=data["is_mehthyl"],
+                                            token_type_ids=data["is_mehthyl"] if self.bert.config.type_vocab_size == 2 else data["methyl_seq"],
                                             labels = data["dmr_label"],
                                             methyl_seqs=data["methyl_seq"],
                                             ctype_label=data["ctype_label"]) if dmr_loss else self.model.forward(input_ids = data["dna_seq"])
