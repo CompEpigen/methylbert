@@ -96,10 +96,7 @@ def read_classification(data_loader, trainer, output_dir, save_logit):
 
 def deconvolve(logits, n_grid=10000):
 	grid = np.zeros([1, n_grid])
-	logits = [l.numpy() for l in logits]
-	logits = np.concatenate(logits, axis=0) # merge
-	logits = 1/(1 + np.exp(-logits)) # sigmoid
-
+	
 	logging.info("Grid search (n=%d) for deconvolution", n_grid)
 	for m_theta in tqdm(range(0, n_grid)):
 		theta = m_theta*(1/n_grid)
@@ -152,7 +149,14 @@ if __name__=="__main__":
 	total_res.to_csv(args.output_path+"/res.csv", sep="\t", header=True, index=False)
 
 	# Deconvolution
+
+	# convert the output of methylbert into np.array
+	logits = [l.numpy() for l in logits]
+	logits = np.concatenate(logits, axis=0) # merge
+	logits = 1/(1 + np.exp(-logits)) # sigmoid
+	logits = logits[total_res["n_cpg"]>0,]
+
 	tumour_pred_ratio = deconvolve(logits)
 	print("Deconvolution result: ", tumour_pred_ratio)
-	pd.DataFrame.from_dict({"cell_type":["mL2-3", "mL6-2"],
+	pd.DataFrame.from_dict({"cell_type":["T", "N"],
 							"pred":[tumour_pred_ratio, 1 - tumour_pred_ratio]}).to_csv(args.output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
