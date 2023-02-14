@@ -321,7 +321,8 @@ def finetune_data_generate(args):
         # cell type for the single-cell data
         if "RG" in extracted_reads.columns:
             extracted_reads = extracted_reads.rename(columns={"RG":"read_ctype"})
-            extracted_reads["ctype"] = [c.split("_")[1][:3]+"-"+c.split("_")[1][3] for c in extracted_reads["read_ctype"]]
+            #extracted_reads["ctype"] = [c.split("_")[1][:3]+"-"+c.split("_")[1][3] for c in extracted_reads["read_ctype"]] # mouse single-cell
+            extracted_reads["ctype"] = [c.split("_")[1] for c in extracted_reads["read_ctype"]]
         else:
             extracted_reads["ctype"] = f_sc_ctype
         extracted_reads = extracted_reads.rename(columns={"RF":"dna_seq", "ME":"methyl_seq"})

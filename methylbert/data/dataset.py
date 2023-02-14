@@ -27,13 +27,12 @@ def _line2tokens(l, tokenizer, max_len=120):
 def _line2tokens_finetune(l, tokenizer, max_len=120, headers=None):
 	# Separate n-mers tokens and labels from each line 
 	l = l.strip().split("\t")
-
 	if ( not headers ) and ( len(l) == 22 ):
 		headers = ["seqname", "flag", "ref_name", "ref_pos", "map_quality", "cigar", "next_ref_name", "next_ref_pos", "length", "seq", "qual", "MD", "PG", "XG", "NM", "XM", "XR", "dna_seq", "methyl_seq", "dmr_ctype", "dmr_label", "ctype"]
 	elif ( not headers ) and ( len(l) == 5 ):
 		headers = ["dna_seq", "methyl_seq", "dmr_ctype", "ctype", "dmr_label"]
-	elif ( not headers ) and ( len(l) == 7 ):
-		headers = ["dna_seq", "methyl_seq", "dmr_ctype", "ctype", "dmr_label",  "seq", "xm_tag"]
+	elif ( not headers ) and ( len(l) == 8 ):
+		headers = ["dna_seq", "methyl_seq", "dmr_ctype", "ctype", "dmr_label",  "ref_name", "ref_pos", "xm_tag"]
 	
 	if len(headers) == len(l):
 		l = {k: v for k, v in zip(headers, l)}
