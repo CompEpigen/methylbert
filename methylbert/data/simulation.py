@@ -3,8 +3,10 @@ from scipy.stats import binom
 from tqdm import tqdm
 import os, argparse
 from Bio import SeqIO
-import random 
+import random, shutil
 import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 def arg_parser():
     parser = argparse.ArgumentParser()
@@ -13,6 +15,8 @@ def arg_parser():
     #parser.add_argument("-i", "--f_input", required=False, type=str, help=".csv file, DMRs should be given with mean methylation level of each cell type, chr, start and end")
     parser.add_argument("-o", "--output_dir", required=True, type=str, help="a directory where all generated results will be saved")
     parser.add_argument("-r", "--f_ref", required=True, type=str, help=".fasta file for the reference genome")
+
+    parser.add_argument("--save_img", required=False, action="store_true", default=False, help="Save simulated methylation patterns as a .png file")
 
     #Hyperparameters for read-level methylome simulation 
     parser.add_argument("-nm", "--n_mers", type=int, default=3, help="n-mers")
@@ -29,6 +33,20 @@ def arg_parser():
     
 
     return parser.parse_args()
+
+
+def long_read_cpg_sample(r_start: int, r_end: int, r_seq: str, dmr):
+    cpg_loci = list()
+    before_dmr = 0
+    after_dmr = 0
+    for j in range(len(r_seq) - 2):
+        if r_seq[j:j+2] == "CG":
+            cpg_loci.append(j)
+            if r_start + j < dmr["start"]: 
+                before_dmr += 1
+            elif r_start + j > dmr["end"]:
+                after_dmr +=1
+    return cpg_loci, before_dmr, after_dmr
 
 
 def simulation(args):
@@ -58,35 +76,66 @@ def simulation(args):
         df_dmr = df_dmr.set_index("dmr_id")
     print(df_dmr)
 
+    # If there's no dmr file in the output dir, copy the dmr file
+    if not os.path.exists(os.path.join(args.output_dir, "dmr.csv")):
+        shutil.copyfile(args.f_dmr, os.path.join(args.output_dir, "dmr.csv"))
 
     reads = list()
     for i in tqdm(range(df_dmr.shape[0])):
+
         dmr = df_dmr.loc[i]
-        refseq = dict_ref[dmr["chr"]][dmr["start"]:dmr["end"]]
+        dmr_len = dmr["end"] - dmr["start"]
+        
+        # Methylation patterns should be sample from a same distribution in non-dmr regions
+        non_dmr_mean_methy = 0.95 if dmr["meanMethy2"] > 0.5 else 0.05
+
+        # Whether long-read seq or not
+        if args.len_read > dmr["end"] - dmr["start"]:
+            read_sample_start = dmr["start"] - args.len_read + dmr_len
+            read_sample_end = dmr["end"] + args.len_read - dmr_len
+        else:
+            read_sample_start = dmr["start"]
+            read_sample_end = dmr["end"]
+
+        refseq = dict_ref[dmr["chr"]][read_sample_start:read_sample_end + args.len_read]
 
         # Sample start positions
-        r_starts = np.random.randint(len(refseq)-args.len_read, size=args.n_reads).tolist()
+        #r_starts = np.random.randint(len(refseq)-args.len_read, size=args.n_reads).tolist()
+        starts = np.random.randint(read_sample_start, read_sample_end-args.len_read, size=args.n_reads).tolist()
 
-        for r_idx, start in enumerate(r_starts):
+        if args.save_img:
+            methyl_array = np.ones([args.n_reads, read_sample_end - read_sample_start]) * -1
+    
+        for r_idx, start in enumerate(starts):
             # simulate same number of reads for all cell types 
             r_ctype = "N" if r_idx < int(args.n_reads/2) else "T"
 
             # read position
-            r_start = dmr["start"] + start
-            r_end = r_start + args.len_read + 2
-            r_seq = dict_ref[dmr["chr"]][r_start:r_end]
+            end = start + args.len_read + 2
+            r_seq = dict_ref[dmr["chr"]][start:end]
             
             # Set probability based on mean methylation level for each cell type
             p=dmr["meanMethy1"] if r_ctype=="N" else dmr["meanMethy2"]
             
-            # Methylation pattern
-            cpg_loci = [j for j in range(len(r_seq)-2) if r_seq[j:j+2] == "CG"]
+            # Collect CpGs
+            #cpg_loci = [j for j in range(len(r_seq)-2) if r_seq[j:j+2] == "CG"]
+            cpg_loci, before_dmr, after_dmr = long_read_cpg_sample(start, end, r_seq, dmr)
 
+            # Simulate methylation patterns
+            m_patterns_1 = binom.rvs(n=1, p=non_dmr_mean_methy, size=before_dmr)
+            m_patterns_2 = binom.rvs(n=1, p=non_dmr_mean_methy, size=after_dmr)
             methyl_patterns = binom.rvs(n=1, p=p, 
-                                        size=len(cpg_loci)).tolist()
+                                        size=len(cpg_loci)-before_dmr-after_dmr).tolist()        
+            methyl_patterns = np.concatenate([m_patterns_1, methyl_patterns, m_patterns_2])
+
+
             r_methyl = list(np.ones(len(r_seq), dtype=int)*2)
             for ri, rm in zip(cpg_loci, methyl_patterns):
                 r_methyl[ri] = rm
+            
+            if args.save_img:
+                methyl_array[r_idx, start-read_sample_start:(start+args.len_read-read_sample_start)] = r_methyl[1:-1]
+
             r_methyl = "".join([str(r) for r in r_methyl[1:-1]])
 
             # 3-mers
@@ -98,8 +147,18 @@ def simulation(args):
                                  "ctype": [r_ctype],
                                  "dmr_label":[i],
                                  "ref_name":[dmr["chr"]],
-                                 "ref_pos":[r_start],
+                                 "ref_pos":[start],
                                  "XM": ["z"]}))
+
+            
+
+        if args.save_img:
+            fig, ax=plt.subplots(1, figsize=(30,5))
+            s=sns.heatmap(methyl_array, cmap=["white", "yellow", "black", "grey"], ax=ax)
+            ax.set_title("Region %d"%(i))
+            ax.hlines([int(args.n_reads/2)], colors="blue", xmin=0, xmax=methyl_array.shape[1])
+            s.get_figure().savefig(f"{args.output_dir}/region_{i}.png")    
+        
 
     reads = pd.concat(reads)
     if not args.bulk:
