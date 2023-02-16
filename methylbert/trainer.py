@@ -53,7 +53,7 @@ def get_config(**kwargs):
             ('log_freq', 10),
             ('eval_freq', 10),
             ('n_hidden', None),
-            ("decrease_steps", 1500),
+            ("decrease_steps", 200),
             ('eval', False),
             ('amp', False),
             ("methyl_learning", "cnn"),
@@ -425,7 +425,7 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
         elif self._config.methyl_learning == "embedding":
             self.bert = MethylBertForMergedClassification(config=config)
         elif self._config.methyl_learning == "dmr_embedding":
-            self.bert = MethylBertEmbeddedDMR(config=config)
+            self.bert = MethylBertEmbeddedDMR(config=config, seq_len=self.train_data.dataset.seq_len)
         self.bert.set_loss(loss = self.loss, 
                            n_classes = torch.tensor(self.train_data.dataset.ctype_label_count, dtype=torch.int64), device=self.device)
         
@@ -685,7 +685,8 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                 output_attentions=True, 
                 output_hidden_states=True, 
                 hidden_dropout_prob=0.01, 
-                vocab_size = len(self.train_data.dataset.vocab))
+                vocab_size = len(self.train_data.dataset.vocab), 
+                seq_len = self.train_data.dataset.seq_len)
             if os.path.exists(os.path.dirname(file_path)+"/dmr_encoder.pickle"):
                 print("Restore DMR encoder from %s"%(os.path.dirname(file_path)+"/dmr_encoder.pickle"))
                 self.bert.from_pretrained_dmr_encoder(os.path.dirname(file_path)+"/dmr_encoder.pickle", self.device)

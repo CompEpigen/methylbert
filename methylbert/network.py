@@ -7,6 +7,7 @@ import math, os
 from copy import deepcopy
 
 from transformers import BertPreTrainedModel, BertModel
+#from methylbert.modeling_methylbert import MethylBertModel as BertModel
 
 # https://github.com/kaidic/LDAM-DRW/blob/master/losses.py
 class LDAMLoss(nn.Module):
@@ -264,7 +265,7 @@ class MethylBertForMergedClassification(BertPreTrainedModel):
         self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, self.config.num_labels)
-
+        self.seq_len = seq_len
         self.read_classifier = nn.Linear(config.hidden_size * (seq_len+1), 2)
         self.init_weights()
 
@@ -350,7 +351,7 @@ class MethylBertForMergedClassification(BertPreTrainedModel):
         pooled_output = self.dropout(pooled_output)
         logits = self.classifier(pooled_output)
 
-        sequence_output=outputs[0].view(-1,151*768)
+        sequence_output=outputs[0].view(-1,(self.seq_len+1)*768)
         ctype_logits = self.read_classifier(sequence_output)
 
         outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
@@ -403,6 +404,7 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
             nn.Linear(seq_len+1, 2)
         )
 
+        self.seq_len = seq_len
 
         self.dmr_encoder = nn.Sequential(
             nn.Embedding(num_embeddings=100, embedding_dim = seq_len+1),
@@ -465,7 +467,7 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
 
         sequence_output =  torch.cat((sequence_output, encoded_dmr.unsqueeze(-1)), axis=-1)
 
-        ctype_logits = self.read_classifier(sequence_output.view(-1,151*769))
+        ctype_logits = self.read_classifier(sequence_output.view(-1,(self.seq_len+1)*769))
 
         if self.loss == "ldam" :
             classification_loss_fct = LDAMLoss(cls_num_list = self.n_classes)
