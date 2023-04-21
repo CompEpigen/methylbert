@@ -8,6 +8,7 @@ from methylbert.data.dataset import MethylBertFinetuneDataset
 
 from torch.utils.data import DataLoader
 from torch import Tensor
+from torch.nn.functional import softmax
 
 from tqdm import tqdm
 import pickle as pk
@@ -95,12 +96,13 @@ def read_classification(data_loader, trainer, output_dir, save_logit):
 	return total_res, classification_logits
 
 def deconvolve(logits, n_grid=10000):
+	margins = [0.5592661950339853, 0.4407338049660147]
 	grid = np.zeros([1, n_grid])
 	
 	logging.info("Grid search (n=%d) for deconvolution", n_grid)
 	for m_theta in tqdm(range(0, n_grid)):
 		theta = m_theta*(1/n_grid)
-		prob = np.log(theta*(logits[:,1]) + (1-theta)*(logits[:,0])).tolist()
+		prob = np.log(theta*(logits[:,1]/margins[1]) + (1-theta)*(logits[:,0]/margins[0])).tolist()
 		grid[0, m_theta] = np.sum(prob)
 
 	estimation = np.argmax(grid, axis=1)*(1/n_grid)
@@ -153,7 +155,10 @@ if __name__=="__main__":
 	# convert the output of methylbert into np.array
 	logits = [l.numpy() for l in logits]
 	logits = np.concatenate(logits, axis=0) # merge
-	logits = 1/(1 + np.exp(-logits)) # sigmoid
+
+	#logits = 1/(1 + np.exp(-logits)) # sigmoid
+
+
 	logits = logits[total_res["n_cpg"]>0,]
 
 	tumour_pred_ratio = deconvolve(logits)

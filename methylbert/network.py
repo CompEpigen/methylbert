@@ -481,9 +481,11 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
             (ctype_label*2-1))
 
         else:
-            classification_loss_fct = nn.BCEWithLogitsLoss()
+            #classification_loss_fct = nn.BCEWithLogitsLoss()
+            classification_loss_fct = nn.CrossEntropyLoss()
             binary_loss = classification_loss_fct(ctype_logits.view(-1, 2), 
             nn.functional.one_hot(ctype_label, num_classes=2).to(torch.float32).view(-1, 2))
+            ctype_logits = ctype_logits.softmax(dim=1)
         loss = binary_loss
 
         outputs = {"loss": loss,
