@@ -407,7 +407,7 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
         self.seq_len = seq_len
 
         self.dmr_encoder = nn.Sequential(
-            nn.Embedding(num_embeddings=100, embedding_dim = seq_len+1),
+            nn.Embedding(num_embeddings=self.num_labels, embedding_dim = seq_len+1),
             #nn.Dropout(p=0.1),
             #nn.Linear(in_features=seq_len+1, out_features=seq_len+1, bias=True),
         )
@@ -482,7 +482,7 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
 
         else:
             #classification_loss_fct = nn.BCEWithLogitsLoss()
-            classification_loss_fct = nn.CrossEntropyLoss()
+            classification_loss_fct = nn.CrossEntropyLoss() # this function requires unnormalised logits
             binary_loss = classification_loss_fct(ctype_logits.view(-1, 2), 
             nn.functional.one_hot(ctype_label, num_classes=2).to(torch.float32).view(-1, 2))
             ctype_logits = ctype_logits.softmax(dim=1)
