@@ -86,7 +86,7 @@ def handling_cigar(ref_seq, xm_tag, cigar):
         
     return "".join(ref_seq), "".join(xm_tag)
 
-def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame, ncores=1, single_end=None):
+def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame, ncores=1):
     '''
         Extract reads including methylation patterns overlapping with DMRs
         and convert those into 3-mers sequences
@@ -104,7 +104,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
 
     '''
     
-    def _reads_overlapping(aln, chromo, start, end, single_end):
+    def _reads_overlapping(aln, chromo, start, end):
         seq_list = list()
         dna_seq = list()
         xm_tags = list()
@@ -130,16 +130,17 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
 
             if len(methylatable_sites) == 0:
                 continue 
-            
+            is_single_end = not bool(reads.flag % 2)
             # Disregard CHH context (h and H)
             for idx in methylatable_sites:
                 methyl_state = None
                 methyl_idx = -1
+
                 # Taking the complemented cytosine's methylation for the reversed reads
                 if idx >= len(xm_tag):
                     methyl_state = "."
                     methyl_idx=idx
-                elif (not reads.is_reverse and single_end) or (reads.is_reverse != reads.is_read1 and not single_end):
+                elif (not reads.is_reverse and is_single_end) or (reads.is_reverse != reads.is_read1 and not is_single_end):
                     methyl_state = xm_tag[idx]
                     methyl_idx = idx 
                 elif idx+1 < len(xm_tag): 
@@ -148,18 +149,19 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
                 else:
                     methyl_state = "."
                     methyl_idx = idx+1
-                    
+                
                 if methyl_state is not None:
                     if methyl_state in (".", "D"): # Missing or occured by deletion
                         methyl_state = "C"
                         
-                    elif (methyl_state in ["x", "h", "X", "H"]):
+                    elif (methyl_state in ["x", "h", "X", "H"]): # non-CpG methyl
                         if (xm_tag[idx] in ["D"]) or (xm_tag[idx+1] in ["D"]):
                             methyl_state="C"
                         else:
                             raise ValueError("Error in the conversion: %s %s %s %s %s"%(xm_tag[idx],   
                                              methyl_state, "Reverse" if reads.is_reverse else "Forward",
                                              ref_seq, xm_tag))
+                    
                     ref_seq = ref_seq[:idx] + methyl_state + ref_seq[idx+1:]
 
             # Remove inserted and soft clip bases 
@@ -189,23 +191,14 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         return processed_reads
         
     @globalize
-    def _get_methylseq(dmr, bam_file_path, k, single_end):
+    def _get_methylseq(dmr, bam_file_path, k):
         '''
             Return a dictionary of DNA seq, cell type and methylation seq
         '''
         aln = pysam.AlignmentFile(bam_file_path, "rb")
 
-        # Decide whether the file is aligned in single-end mode or paired-end mode
-        if not single_end:
-            single_end=True
-            for program_line in aln.header.as_dict()["PG"]:
-                if "bismark" in program_line["CL"]:
-                    parsed_line = program_line["CL"].split(" ")
-                    for p in parsed_line:
-                        if "-2" in p:
-                            single_end = False
 
-        processed_reads = _reads_overlapping(aln, dmr["chr"], int(dmr["start"]), int(dmr["end"]), single_end)
+        processed_reads = _reads_overlapping(aln, dmr["chr"], int(dmr["start"]), int(dmr["end"]))
 
         if processed_reads.shape[0] > 0:
             processed_reads = processed_reads.assign(dmr_ctype = dmr["ctype"],
@@ -216,8 +209,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
     with mp.Pool(ncores) as pool:
         # Convert sequences to K-mers
         seqs = pool.map(partial(_get_methylseq, 
-                                bam_file_path = bam_file_path, 
-                                k=k, single_end=single_end), 
+                                bam_file_path = bam_file_path, k=k),
                         dmrs.to_dict("records"))
     
     # Filter None values that means no overlapping read with the given DMR
@@ -312,7 +304,8 @@ def finetune_data_generate(args):
             f_sc_ctype = f_sc[1]
             print("%s processing (%s)..."%(f_sc_bam, f_sc_ctype))
         else:
-             print("%s processing..."%f_sc_bam)
+            f_sc_ctype = "NA"
+            print("%s processing..."%f_sc_bam)
 
         extracted_reads = read_extract(f_sc_bam, dict_ref, k=3, dmrs=dmrs, ncores=args.n_cores)
         if extracted_reads is None:
@@ -322,7 +315,7 @@ def finetune_data_generate(args):
         if "RG" in extracted_reads.columns:
             extracted_reads = extracted_reads.rename(columns={"RG":"read_ctype"})
             #extracted_reads["ctype"] = [c.split("_")[1][:3]+"-"+c.split("_")[1][3] for c in extracted_reads["read_ctype"]] # mouse single-cell
-            extracted_reads["ctype"] = [c.split("_")[1] for c in extracted_reads["read_ctype"]]
+            extracted_reads["ctype"] = [c.split("_")[0] for c in extracted_reads["read_ctype"]]
         else:
             extracted_reads["ctype"] = f_sc_ctype
         extracted_reads = extracted_reads.rename(columns={"RF":"dna_seq", "ME":"methyl_seq"})
