@@ -8,6 +8,7 @@ from functools import partial
 import random
 
 from methylbert.data.vocab import WordVocab
+import pandas as pd
 
 def _line2tokens(l, tokenizer, max_len=120):
 	'''
@@ -211,6 +212,7 @@ class MethylBertFinetuneDataset(MethylBertDataset):
 		with open(self.f_path, "r") as f_input:
 			raw_seqs = f_input.read().splitlines()
 
+		# Check if there's header 
 		if "XM" in raw_seqs[0]:
 			headers = raw_seqs[0].split("\t")
 			raw_seqs = raw_seqs[1:]
