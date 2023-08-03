@@ -13,6 +13,69 @@ from torch.nn.functional import softmax
 from tqdm import tqdm
 import pickle as pk
 
+from scipy.optimize import minimize, fmin_bfgs
+
+def _moment(a, moment, axis, *, mean=None):
+	if np.abs(moment - np.round(moment)) > 0:
+		raise ValueError("All moment parameters must be integers")
+
+	# moment of empty array is the same regardless of order
+	if a.size == 0:
+		return np.mean(a, axis=axis)
+
+	dtype = a.dtype.type if a.dtype.kind in 'fc' else np.float64
+
+	if moment == 0 or (moment == 1 and mean is None):
+		# By definition the zeroth moment is always 1, and the first *central*
+		# moment is 0.
+		shape = list(a.shape)
+		del shape[axis]
+
+		if len(shape) == 0:
+			return dtype(1.0 if moment == 0 else 0.0)
+		else:
+			return (np.ones(shape, dtype=dtype) if moment == 0
+					else np.zeros(shape, dtype=dtype))
+	else:
+		# Exponentiation by squares: form exponent sequence
+		n_list = [moment]
+		current_n = moment
+		while current_n > 2:
+			if current_n % 2:
+				current_n = (current_n - 1) / 2
+			else:
+				current_n /= 2
+			n_list.append(current_n)
+
+		# Starting point for exponentiation by squares
+		mean = (a.mean(axis, keepdims=True) if mean is None
+				else dtype(mean))
+		a_zero_mean = a - mean
+
+		eps = np.finfo(a_zero_mean.dtype).resolution * 10
+		with np.errstate(divide='ignore', invalid='ignore'):
+			rel_diff = np.max(np.abs(a_zero_mean), axis=axis) / np.abs(mean)
+		with np.errstate(invalid='ignore'):
+			precision_loss = np.any(rel_diff < eps)
+		n = a.shape[axis] if axis is not None else a.size
+		if precision_loss and n > 1:
+			message = ("Precision loss occurred in moment calculation due to "
+					   "catastrophic cancellation. This occurs when the data "
+					   "are nearly identical. Results may be unreliable.")
+			warnings.warn(message, RuntimeWarning, stacklevel=4)
+
+		if n_list[-1] == 1:
+			s = a_zero_mean.copy()
+		else:
+			s = a_zero_mean**2
+
+		# Perform multiplications
+		for n in n_list[-2::-1]:
+			s = s**2
+			if n % 2:
+				s *= a_zero_mean
+		return np.mean(s, axis)
+
 def arg_parser():
 	parser = argparse.ArgumentParser()
 
@@ -95,19 +158,78 @@ def read_classification(data_loader, trainer, output_dir, save_logit):
 
 	return total_res, classification_logits
 
-def deconvolve(logits, n_grid=10000):
-	margins = [0.5592661950339853, 0.4407338049660147]
+def grid_search(logits, margins, n_grid, verbose=True):
 	grid = np.zeros([1, n_grid])
 	
-	logging.info("Grid search (n=%d) for deconvolution", n_grid)
-	for m_theta in tqdm(range(0, n_grid)):
+	if verbose:
+		logging.info("Grid search (n=%d) for deconvolution", n_grid)
+		pbar = tqdm(total=n_grid)
+	for m_theta in range(0, n_grid):
 		theta = m_theta*(1/n_grid)
 		prob = np.log(theta*(logits[:,1]/margins[1]) + (1-theta)*(logits[:,0]/margins[0])).tolist()
 		grid[0, m_theta] = np.sum(prob)
+		if verbose:
+			pbar.update(1)
+	if verbose:
+		pbar.close()
 
-	estimation = np.argmax(grid, axis=1)*(1/n_grid)
+	return np.argmax(grid, axis=1)*(1/n_grid)	
 
-	return estimation[0]
+
+def grid_search_regions(logits, margins, n_grid, regions):
+	print(logits.shape, regions.shape)
+	regions = pd.DataFrame({
+		"logit1" : logits[:, 0],
+		"logit2" : logits[:, 1],
+		"region" : regions if isinstance(regions, list) else regions.tolist()
+		})
+
+	dmr_labels = regions["region"].unique()
+	region_purity = np.zeros(len(dmr_labels))
+	for idx, dmr_label in enumerate(dmr_labels):
+		dmr_logits = regions[regions["region"] == dmr_label]
+		region_purity[idx] =grid_search(np.array(dmr_logits.loc[:, ["logit1", "logit2"]]), margins, n_grid, verbose=False)
+
+	weights = np.ones(len(dmr_labels))
+	prev_mean = np.inf
+	for iterration in tqdm(range(10)):
+		estimates = np.mean(np.multiply(region_purity,weights))
+ 
+		def skewness_test(x):
+			a = np.multiply(np.array(region_purity), x)
+			m2 = _moment(a, 2, axis=0, mean=estimates)
+			m3 = _moment(a, 3, axis=0, mean=estimates)
+			with np.errstate(all='ignore'):
+				zero = (m2 <= (np.finfo(m2.dtype).resolution * estimates)**2)
+				vals = np.where(zero, np.nan, m3 / m2**1.5)
+			return (vals[()])**2 
+
+
+		x = minimize(skewness_test, weights) 
+		weights = x["x"]
+		if abs(estimates - prev_mean) < 0.0001:
+			break
+		prev_mean = estimates
+
+	return [estimates, 1-estimates]
+
+
+def deconvolve(logits, margins, n_grid=10000, method="grid", dmr_labels=None):
+	'''
+
+	method (str): method to optimise theta, either "grid" or "gredient"
+	'''
+
+	if dmr_labels is not None:
+		estimation = grid_search_regions(logits, margins, n_grid, dmr_labels)
+	elif method == "grid":
+		estimation = grid_search(logits, margins, n_grid)
+	elif method == "skew":
+		estimation = grid_search_skew(logits, margins, n_grid)
+	else:
+		logging.error("Please choose \"grid\" or \"gradient\" for the optimisation method")
+	
+	return estimation[0] 
 																																																																																													   
 if __name__=="__main__":
 	args = arg_parser()
@@ -126,42 +248,85 @@ if __name__=="__main__":
 		os.mkdir(args.output_path)
 		logging.info("New directory %s is created", args.output_path)
 
-	# Restore the model
-	tokenizer=WordVocab(k=int(params["n_mers"]), cpg= False, chg= False, chh=False)
-	dataset = MethylBertFinetuneDataset(args.input_data, tokenizer, seq_len=int(params["seq_len"]))
-	data_loader = DataLoader(dataset, batch_size=args.batch_size, num_workers=20)
-	logging.info("Bulk data (%s) is loaded", args.input_data)
+	if os.path.exists(args.output_path+"/test_classification_logit.pk"):
+		logging.info("Load saved logits  and results")
+		with open(args.output_path+"/test_classification_logit.pk", "rb") as fp:
+			logits = pk.load(fp)
 
-	restore_dir = os.path.join(args.model_dir, "bert.model/")
-	trainer = MethylBertFinetuneTrainer(len(tokenizer), save_path='./test',
-										train_dataloader=data_loader, 
-										test_dataloader=data_loader,
-										methyl_learning=params["methyl_learning"] if "methyl_learning" in params.keys() else "cnn",
-										loss=params["loss"] if "loss" in params.keys() else "bce")
-	trainer.load(restore_dir, n_dmrs=100)
-	logging.info("Trained model (%s) is restored", restore_dir)
+		total_res = pd.read_csv(args.output_path+"/res.csv", sep="\t")
+	else:
+		# Restore the model
+		tokenizer=WordVocab(k=int(params["n_mers"]), cpg=False, chg=False, chh=False)
+		dataset = MethylBertFinetuneDataset(args.input_data, tokenizer, seq_len=int(params["seq_len"]))
+		data_loader = DataLoader(dataset, batch_size=args.batch_size, num_workers=20)
+		logging.info("Bulk data (%s) is loaded", args.input_data)
 
-	# Read classification
-	total_res, logits = read_classification(data_loader=data_loader, 
-											trainer=trainer, 
-											output_dir=args.output_path, 
-											save_logit=args.save_logit)
+		restore_dir = os.path.join(args.model_dir, "bert.model/")
+		trainer = MethylBertFinetuneTrainer(len(tokenizer), save_path='./test',
+											train_dataloader=data_loader, 
+											test_dataloader=data_loader,
+											methyl_learning=params["methyl_learning"] if "methyl_learning" in params.keys() else "cnn",
+											loss=params["loss"] if "loss" in params.keys() else "bce")
+		trainer.load(restore_dir, n_dmrs=100)
+		logging.info("Trained model (%s) is restored", restore_dir)
 
-	# Save the classification results 
-	total_res.to_csv(args.output_path+"/res.csv", sep="\t", header=True, index=False)
+		# Read classification
+		total_res, logits = read_classification(data_loader=data_loader, 
+												trainer=trainer, 
+												output_dir=args.output_path, 
+												save_logit=args.save_logit)
 
-	# Deconvolution
+		# Save the classification results 
+		total_res.to_csv(args.output_path+"/res.csv", sep="\t", header=True, index=False)
+
 
 	# convert the output of methylbert into np.array
-	logits = [l.numpy() for l in logits]
+	logits = [l.detach().numpy() for l in logits]
 	logits = np.concatenate(logits, axis=0) # merge
 
-	#logits = 1/(1 + np.exp(-logits)) # sigmoid
+	
+	# Calculate margins
+	df_train = pd.read_csv(params["train_dataset"], sep="\t")
+	#df_train.columns = ['seqname', 'flag', 'ref_name', 'ref_pos', 'map_quality', 'cigar', 'next_ref_name', 'next_ref_pos', 'length', 'seq', 'qual', 'MD', 'PG', 'XG', 'NM', 'XM', 'XR', 'dna_seq', 'methyl_seq', 'dmr_ctype', 'dmr_label', 'ctype']
 
+	# Deconvolution
+	unique_ctypes = df_train["ctype"].unique()
+	if total_res["ctype"][0] not in ["N", "T"]:
+		total_res["ctype"] = ["N" if c == "noncancer" else "T" for c in total_res["ctype"]]
 
-	logits = logits[total_res["n_cpg"]>0,]
+	print("UNIQUE ", unique_ctypes)
+	if len(unique_ctypes) == 2:
+		# Tumour-normal deconvolution
+		margins = df_train.value_counts("ctype", normalize=True)[["N","T"]].tolist()
+		print(total_res.head())
+		print(total_res.value_counts("ctype", normalize=True)[["N","T"]].tolist(), margins)
 
-	tumour_pred_ratio = deconvolve(logits)
-	print("Deconvolution result: ", tumour_pred_ratio)
-	pd.DataFrame.from_dict({"cell_type":["T", "N"],
-							"pred":[tumour_pred_ratio, 1 - tumour_pred_ratio]}).to_csv(args.output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
+		logits = logits[total_res["n_cpg"]>0,]
+		total_res  = total_res[total_res["n_cpg"]>0]
+		#tumour_pred_ratio = deconvolve(logits=logits, margins=margins, dmr_labels=total_res["dmr_label"])
+		tumour_pred_ratio = deconvolve(logits=logits, margins=margins)
+		print("Deconvolution result: ", tumour_pred_ratio)
+		pd.DataFrame.from_dict({"cell_type":["T", "N"],
+								"pred":[tumour_pred_ratio, 1-tumour_pred_ratio]}).to_csv(args.output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
+	else:
+		# Multiple cancer type deconvolution
+		# load DMRs
+		df_dmrs = pd.read_csv(os.path.dirname(params["train_dataset"])+"/dmrs.csv",
+						   sep="\t")
+		margins = {c:r for c, r in zip(unique_ctypes,
+									   df_train.value_counts("ctype", normalize=True)[unique_ctypes].tolist())}
+		estimated_tumour_proportions = dict()
+		for dmr_ctype in df_dmrs["ctype"].unique():
+			# Select reads only from cell-type DMRs
+			ctype_dmr_ids = df_dmrs.loc[df_dmrs["ctype"]==dmr_ctype, "dmr_id"]
+			ctype_reads = total_res.loc[total_res["dmr_label"].isin(ctype_dmr_ids),]
+			print(ctype_reads.head())
+			ctype_logits = logits[list(ctype_reads.index),]
+			ctype_logits = ctype_logits[ctype_reads["n_cpg"]>0,]
+
+			print(logits[0,:], margins)
+			tumour_pred_ratio = deconvolve(logits=ctype_logits, margins=[margins["N"], margins[dmr_ctype]])
+			estimated_tumour_proportions[dmr_ctype] = tumour_pred_ratio
+
+		pd.DataFrame.from_dict({"cell_type":list(estimated_tumour_proportions.keys()),
+								"pred":list(estimated_tumour_proportions.values())}).to_csv(args.output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
