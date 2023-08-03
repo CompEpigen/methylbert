@@ -114,7 +114,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         processed_reads = list()
         for reads in fetched_reads:
             if (reads.pos  < start) or ((reads.pos+reads.query_alignment_length) > end):
-                continue     
+                continue
                 
             ref_seq = dict_ref[chromo][reads.pos:(reads.pos+reads.query_alignment_length)].upper() # Remove case-specific mode occured by the quality
             xm_tag = reads.get_tag("XM")
@@ -128,15 +128,18 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
             # Extract all cytosines
             methylatable_sites = [idx for idx, r in enumerate(ref_seq) if ref_seq[idx:idx+2] == "CG"]
 
+            # if there's no CpGs on the read
             if len(methylatable_sites) == 0:
                 continue 
+
+            # Paired-end or single-end
             is_single_end = not bool(reads.flag % 2)
-            # Disregard CHH context (h and H)
+
             for idx in methylatable_sites:
                 methyl_state = None
                 methyl_idx = -1
 
-                # Taking the complemented cytosine's methylation for the reversed reads
+                # Taking the complement cytosine's methylation for the reversed reads
                 if idx >= len(xm_tag):
                     methyl_state = "."
                     methyl_idx=idx
@@ -168,6 +171,9 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
             ref_seq = ref_seq.replace("I", "")
             ref_seq = ref_seq.replace("S", "")
 
+            # Check number of CpGs 
+            if "z" not in ref_seq.lower()[1:150]:
+                continue
 
             # K-mers
             s, m = kmers(ref_seq, k=3)
@@ -179,6 +185,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
             reads.setTag("RF", value=" ".join(s), replace=True)
             reads.setTag("ME", value="".join(m), replace=True)
 
+            # Process back to a dictionary
             read_tags = {t:v for t, v in reads.get_tags()}
             reads = reads.to_dict()
             reads.update(read_tags)
@@ -315,7 +322,7 @@ def finetune_data_generate(args):
         if "RG" in extracted_reads.columns:
             extracted_reads = extracted_reads.rename(columns={"RG":"read_ctype"})
             #extracted_reads["ctype"] = [c.split("_")[1][:3]+"-"+c.split("_")[1][3] for c in extracted_reads["read_ctype"]] # mouse single-cell
-            extracted_reads["ctype"] = [c.split("_")[0] for c in extracted_reads["read_ctype"]]
+            extracted_reads["ctype"] = [c.split("_")[1] for c in extracted_reads["read_ctype"]] # tumour pseudo bulk
         else:
             extracted_reads["ctype"] = f_sc_ctype
         extracted_reads = extracted_reads.rename(columns={"RF":"dna_seq", "ME":"methyl_seq"})
@@ -335,8 +342,8 @@ def finetune_data_generate(args):
         print("Size - train %d seqs , valid %d seqs "%(n_train, df_reads.shape[0] - n_train))
 
         # Write train & test files
-        df_reads.loc[:n_train,:].to_csv(fp_train_seq, sep="\t", header=None, index=None)
-        df_reads.loc[n_train:,:].to_csv(fp_test_seq, sep="\t", header=None, index=None)
+        df_reads.loc[:n_train,:].to_csv(fp_train_seq, sep="\t", header=True, index=None)
+        df_reads.loc[n_train:,:].to_csv(fp_test_seq, sep="\t", header=True, index=None)
     else:
         fp_data_seq = os.path.join(args.output_dir, "data.txt")
     
