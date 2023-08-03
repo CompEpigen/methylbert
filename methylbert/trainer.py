@@ -60,6 +60,7 @@ def get_config(**kwargs):
             ("gradient_accumulation_steps", 1), 
             ("max_grad_norm", 1.0),
             ("eval", False),
+            ("save_freq", None),
             ("loss", "bce")
           ]
         )
@@ -206,7 +207,6 @@ class MethylBertPretrainTrainer(MethylBertTrainer):
         pass
     def create_model(self, *args, **kwargs):
         config = BertConfig(vocab_size = len(self.train_data.dataset.vocab), *args, **kwargs)
-    
         self.bert = BertForMaskedLM(config)
         self._setup_model()
 
@@ -608,14 +608,15 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                         print("Step %d loss (%f) is lower than the current min loss (%f). Save the model at %s"%(self.step, global_step_loss, self.min_loss, self.save_path))
                         self.save(self.save_path)
                         self.min_loss = global_step_loss
-
-                    if self.step % 100 == 0 :
-                        print("Step %d loss (%f) is lower than the current min loss (%f). Save the model at %s"%(self.step, global_step_loss, self.min_loss, self.save_path))
+                    
+                    # For saving an interim model to track the training
+                    if ( type(self._config.save_freq) == int ) and (self.step % self._config.save_freq == 0):
                         step_save_dir=self.save_path.replace("bert.model", "bert.model_step%d"%(self.step))
+                        print("Step %d: Save an interim model at %s"%(self.step, global_step_loss, self.min_loss, step_save_dir))
                         if not os.path.exists(step_save_dir):
                             os.mkdir(step_save_dir)
                         self.save(step_save_dir)
-
+                                        
                     # Save the step info (step, loss, lr, acc)
                     with open(self.save_path.split(".")[0]+"_train.csv", "a") as f_perform:
 
