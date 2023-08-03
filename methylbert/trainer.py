@@ -458,7 +458,7 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                 with autocast(enabled=self._config.amp):
                     mask_lm_output = self.model.forward(step=self.step,
                                             input_ids = data["dna_seq"],
-                                            token_type_ids=data["is_mehthyl"] if self.bert.config.type_vocab_size == 2 else data["methyl_seq"],
+                                            token_type_ids=data["is_methyl"] if self.bert.config.type_vocab_size == 2 else data["methyl_seq"],
                                             labels = data["dmr_label"],
                                             methyl_seqs=data["methyl_seq"],
                                             ctype_label=data["ctype_label"]) if dmr_loss else self.model.forward(input_ids = data["dna_seq"])
@@ -541,7 +541,7 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                 with autocast(enabled=self._config.amp):
                     mask_lm_output = self.model.forward(step=self.step,
                                             input_ids = data["dna_seq"],
-                                            token_type_ids=data["is_mehthyl"] if self.bert.config.type_vocab_size == 2 else data["methyl_seq"],
+                                            token_type_ids=data["is_methyl"] if self.bert.config.type_vocab_size == 2 else data["methyl_seq"],
                                             labels = data["dmr_label"],
                                             methyl_seqs=data["methyl_seq"],
                                             ctype_label=data["ctype_label"]) if dmr_loss else self.model.forward(input_ids = data["dna_seq"])
