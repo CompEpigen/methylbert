@@ -10,7 +10,7 @@ import random
 from methylbert.data.vocab import WordVocab
 import pandas as pd
 
-def _line2tokens(l, tokenizer, max_len=120):
+def _line2tokens_pretrain(l, tokenizer, max_len=120):
 	'''
 			convert a text line into a list of tokens converted by tokenizer 
 			
@@ -84,7 +84,7 @@ class MethylBertPretrainDataset(MethylBertDataset):
 
 		# Multiprocessing for the sequence tokenisation
 		with mp.Pool(n_cores) as pool:
-			line_labels = pool.map(partial(_line2tokens, tokenizer=self.vocab, max_len=self.seq_len), raw_seqs)
+			line_labels = pool.map(partial(_line2tokens_pretrain, tokenizer=self.vocab, max_len=self.seq_len), raw_seqs)
 			del raw_seqs
 			print("Lines are processed")
 			self.lines = torch.squeeze(torch.tensor(np.array(line_labels, dtype=np.int16)))

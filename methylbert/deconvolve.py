@@ -5,6 +5,7 @@ import numpy as np
 from methylbert.trainer import MethylBertFinetuneTrainer
 from methylbert.data.vocab import WordVocab
 from methylbert.data.dataset import MethylBertFinetuneDataset
+from methylbert.utils import _moment
 
 from torch.utils.data import DataLoader
 from torch import Tensor
@@ -13,68 +14,7 @@ from torch.nn.functional import softmax
 from tqdm import tqdm
 import pickle as pk
 
-from scipy.optimize import minimize, fmin_bfgs
-
-def _moment(a, moment, axis, *, mean=None):
-	if np.abs(moment - np.round(moment)) > 0:
-		raise ValueError("All moment parameters must be integers")
-
-	# moment of empty array is the same regardless of order
-	if a.size == 0:
-		return np.mean(a, axis=axis)
-
-	dtype = a.dtype.type if a.dtype.kind in 'fc' else np.float64
-
-	if moment == 0 or (moment == 1 and mean is None):
-		# By definition the zeroth moment is always 1, and the first *central*
-		# moment is 0.
-		shape = list(a.shape)
-		del shape[axis]
-
-		if len(shape) == 0:
-			return dtype(1.0 if moment == 0 else 0.0)
-		else:
-			return (np.ones(shape, dtype=dtype) if moment == 0
-					else np.zeros(shape, dtype=dtype))
-	else:
-		# Exponentiation by squares: form exponent sequence
-		n_list = [moment]
-		current_n = moment
-		while current_n > 2:
-			if current_n % 2:
-				current_n = (current_n - 1) / 2
-			else:
-				current_n /= 2
-			n_list.append(current_n)
-
-		# Starting point for exponentiation by squares
-		mean = (a.mean(axis, keepdims=True) if mean is None
-				else dtype(mean))
-		a_zero_mean = a - mean
-
-		eps = np.finfo(a_zero_mean.dtype).resolution * 10
-		with np.errstate(divide='ignore', invalid='ignore'):
-			rel_diff = np.max(np.abs(a_zero_mean), axis=axis) / np.abs(mean)
-		with np.errstate(invalid='ignore'):
-			precision_loss = np.any(rel_diff < eps)
-		n = a.shape[axis] if axis is not None else a.size
-		if precision_loss and n > 1:
-			message = ("Precision loss occurred in moment calculation due to "
-					   "catastrophic cancellation. This occurs when the data "
-					   "are nearly identical. Results may be unreliable.")
-			warnings.warn(message, RuntimeWarning, stacklevel=4)
-
-		if n_list[-1] == 1:
-			s = a_zero_mean.copy()
-		else:
-			s = a_zero_mean**2
-
-		# Perform multiplications
-		for n in n_list[-2::-1]:
-			s = s**2
-			if n % 2:
-				s *= a_zero_mean
-		return np.mean(s, axis)
+from scipy.optimize import minimize
 
 def arg_parser():
 	parser = argparse.ArgumentParser()
@@ -86,6 +26,7 @@ def arg_parser():
 	# Running parametesr
 	parser.add_argument("-b", "--batch_size", type=int, default=64, help="Batch size. Please increase the number if you do not have enough memory to run the software, default: 64")
 	parser.add_argument("--save_logit",  default=False, action="store_true", help="Save logits from the model")
+	parser.add_argument("--adjustment",  default=False, action="store_true", help="Adjust the estimated value")
 
 	return parser.parse_args()
 
@@ -131,6 +72,9 @@ def read_classification(data_loader, trainer, output_dir, save_logit):
 		pbar.update(1)
 	pbar.close()
 
+	if save_logit:
+		with open(output_dir+"/test_classification_logit.pk", "wb") as fp:
+			pk.dump(classification_logits, fp)
 	
 	# Convert the result to a data frame
 
@@ -139,7 +83,8 @@ def read_classification(data_loader, trainer, output_dir, save_logit):
 	total_res["dna_seq"]=[get_dna_seq(s) for s in total_res["dna_seq"]]
 	total_res["methyl_seq"]=["".join([str(mm) for mm in m]) for m in total_res["methyl_seq"]]
 
-	total_res.pop("is_mehthyl", None)
+	if "is_methyl" in total_res.keys():
+		total_res.pop("is_methyl", None)
 	
 	total_res = pd.DataFrame(total_res)
 
@@ -152,9 +97,7 @@ def read_classification(data_loader, trainer, output_dir, save_logit):
 	confusion_dict = {"00":"TN", "11": "TP", "10":"FN", "01":"FP" }
 	total_res["group"] = [confusion_dict[str(g)+str(p)] for g, p in zip(total_res["gt"], total_res["pred"])]
 
-	if save_logit:
-		with open(output_dir+"/test_classification_logit.pk", "wb") as fp:
-			pk.dump(classification_logits, fp)
+
 
 	return total_res, classification_logits
 
@@ -173,7 +116,10 @@ def grid_search(logits, margins, n_grid, verbose=True):
 	if verbose:
 		pbar.close()
 
-	return np.argmax(grid, axis=1)*(1/n_grid)	
+	# Fisher info calculation
+	fi = np.var([np.abs(grid[0, f+1] -  grid[0, f]) * n_grid for f in range(n_grid-1)])
+
+	return np.argmax(grid, axis=1)*(1/n_grid), fi
 
 
 def grid_search_regions(logits, margins, n_grid, regions):
@@ -186,9 +132,10 @@ def grid_search_regions(logits, margins, n_grid, regions):
 
 	dmr_labels = regions["region"].unique()
 	region_purity = np.zeros(len(dmr_labels))
+	fi = np.zeros(len(dmr_labels))
 	for idx, dmr_label in enumerate(dmr_labels):
 		dmr_logits = regions[regions["region"] == dmr_label]
-		region_purity[idx] =grid_search(np.array(dmr_logits.loc[:, ["logit1", "logit2"]]), margins, n_grid, verbose=False)
+		region_purity[idx], fi[idx] =grid_search(np.array(dmr_logits.loc[:, ["logit1", "logit2"]]), margins, n_grid, verbose=False)
 
 	weights = np.ones(len(dmr_labels))
 	prev_mean = np.inf
@@ -211,7 +158,7 @@ def grid_search_regions(logits, margins, n_grid, regions):
 			break
 		prev_mean = estimates
 
-	return [estimates, 1-estimates]
+	return [estimates, 1-estimates], fi
 
 
 def deconvolve(logits, margins, n_grid=10000, method="grid", dmr_labels=None):
@@ -221,15 +168,14 @@ def deconvolve(logits, margins, n_grid=10000, method="grid", dmr_labels=None):
 	'''
 
 	if dmr_labels is not None:
-		estimation = grid_search_regions(logits, margins, n_grid, dmr_labels)
+		estimation, fi = grid_search_regions(logits, margins, n_grid, dmr_labels)
 	elif method == "grid":
-		estimation = grid_search(logits, margins, n_grid)
-	elif method == "skew":
-		estimation = grid_search_skew(logits, margins, n_grid)
+		estimation, fi = grid_search(logits, margins, n_grid)
+		fi = np.array([fi])
 	else:
 		logging.error("Please choose \"grid\" or \"gradient\" for the optimisation method")
 	
-	return estimation[0] 
+	return estimation[0], fi
 																																																																																													   
 if __name__=="__main__":
 	args = arg_parser()
@@ -287,7 +233,7 @@ if __name__=="__main__":
 	
 	# Calculate margins
 	df_train = pd.read_csv(params["train_dataset"], sep="\t")
-	#df_train.columns = ['seqname', 'flag', 'ref_name', 'ref_pos', 'map_quality', 'cigar', 'next_ref_name', 'next_ref_pos', 'length', 'seq', 'qual', 'MD', 'PG', 'XG', 'NM', 'XM', 'XR', 'dna_seq', 'methyl_seq', 'dmr_ctype', 'dmr_label', 'ctype']
+	df_train.columns = ['seqname', 'flag', 'ref_name', 'ref_pos', 'map_quality', 'cigar', 'next_ref_name', 'next_ref_pos', 'length', 'seq', 'qual', 'MD', 'PG', 'XG', 'NM', 'XM', 'XR', 'dna_seq', 'methyl_seq', 'dmr_ctype', 'dmr_label', 'ctype']
 
 	# Deconvolution
 	unique_ctypes = df_train["ctype"].unique()
@@ -298,16 +244,22 @@ if __name__=="__main__":
 	if len(unique_ctypes) == 2:
 		# Tumour-normal deconvolution
 		margins = df_train.value_counts("ctype", normalize=True)[["N","T"]].tolist()
+		print("Margins : ", margins)
 		print(total_res.head())
-		print(total_res.value_counts("ctype", normalize=True)[["N","T"]].tolist(), margins)
+		if ("T" in total_res["ctype"]) and ("N" in total_res["ctype"]):
+			print(total_res.value_counts("ctype", normalize=True)[["N","T"]].tolist(), margins)
 
 		logits = logits[total_res["n_cpg"]>0,]
 		total_res  = total_res[total_res["n_cpg"]>0]
-		#tumour_pred_ratio = deconvolve(logits=logits, margins=margins, dmr_labels=total_res["dmr_label"])
-		tumour_pred_ratio = deconvolve(logits=logits, margins=margins)
+		
+		if args.adjustment:
+			tumour_pred_ratio, fi = deconvolve(logits=logits, margins=margins, dmr_labels=total_res["dmr_label"])
+		else:
+			tumour_pred_ratio, fi = deconvolve(logits=logits, margins=margins)
 		print("Deconvolution result: ", tumour_pred_ratio)
 		pd.DataFrame.from_dict({"cell_type":["T", "N"],
 								"pred":[tumour_pred_ratio, 1-tumour_pred_ratio]}).to_csv(args.output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
+		pd.DataFrame.from_dict({"fi":fi}).to_csv(args.output_path+"/FI.csv", sep="\t", header=True, index=False)
 	else:
 		# Multiple cancer type deconvolution
 		# load DMRs
