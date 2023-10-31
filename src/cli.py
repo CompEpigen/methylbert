@@ -13,16 +13,15 @@ from torch.utils.data import DataLoader
 
 def deconvolute_arg_parser(subparsers):
 	parser = subparsers.add_parser('deconvolute', help='Run MethylBERT tumour deconvolution')
-	parser = argparse.ArgumentParser()
 
 	parser.add_argument("-i", "--input_data", required=True, type=str, help="Bulk data to deconvolve")
 	parser.add_argument("-m", "--model_dir", required=True, type=str, help="Trained methylbert model")
-	parser.add_argument("-o", "--output_path", type=str, default="./", help="Directory to save deconvolution results. default: ./")
+	parser.add_argument("-o", "--output_path", type=str, default="./", help="Directory to save deconvolution results. (default: ./)")
 
 	# Running parametesr
-	parser.add_argument("-b", "--batch_size", type=int, default=64, help="Batch size. Please decrease the number if you do not have enough memory to run the software, default: 64")
-	parser.add_argument("--save_logit",  default=False, action="store_true", help="Save logits from the model, default: False")
-	parser.add_argument("--adjustment",  default=False, action="store_true", help="Adjust the estimated tumour purity, default: False")
+	parser.add_argument("-b", "--batch_size", type=int, default=64, help="Batch size. Please decrease the number if you do not have enough memory to run the software (default: 64)")
+	parser.add_argument("--save_logit",  default=False, action="store_true", help="Save logits from the model (default: False)")
+	parser.add_argument("--adjustment",  default=False, action="store_true", help="Adjust the estimated tumour purity (default: False)")
 
 
 def finetune_arg_parser(subparsers):
@@ -31,37 +30,37 @@ def finetune_arg_parser(subparsers):
 	parser.add_argument("-c", "--train_dataset", required=True, type=str, help="train dataset for train bert")
 	parser.add_argument("-t", "--test_dataset", type=str, default=None, help="test set for evaluate train set")
 	parser.add_argument("-o", "--output_path", required=True, type=str, help="ex)output/bert.model")
-	parser.add_argument("-p", "--pretrain", type=str, default=None, help="a saved pretrained model")
-	parser.add_argument("-nm", "--n_mers", type=int, default=3, help="n-mers")
+	parser.add_argument("-p", "--pretrain", type=str, default=None, help="a saved pretrained model to restore")
+	parser.add_argument("-nm", "--n_mers", type=int, default=3, help="n-mers (default: 3)")
 	
-	parser.add_argument("-s", "--seq_len", type=int, default=120, help="maximum sequence len")
-	parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Max gradient norm.")
+	parser.add_argument("-s", "--seq_len", type=int, default=150, help="maximum sequence len (default: 150)")
+	parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Max gradient norm (default: 1.0)")
 	parser.add_argument(
 		"--gradient_accumulation_steps",
 		type=int,
 		default=1,
-		help="Number of updates steps to accumulate before performing a backward/update pass.",
+		help="Number of updates steps to accumulate before performing a backward/update pass. (default: 1)",
 	)
-	parser.add_argument("-b", "--batch_size", type=int, default=50, help="number of batch_size")
-	parser.add_argument("--valid_batch", type=int, default=-1, help="number of batch_size in valid set")
-	parser.add_argument("-e", "--steps", type=int, default=10, help="number of steps")
+	parser.add_argument("-b", "--batch_size", type=int, default=50, help="number of batch_size (default: 50)")
+	parser.add_argument("--valid_batch", type=int, default=-1, help="number of batch_size in valid set. If it's not given, valid_set batch size is set same as the train_set batch size")
+	parser.add_argument("-e", "--steps", type=int, default=600, help="number of training steps (default: 600)")
 	parser.add_argument("--save_freq", type=int, default=None, help="Steps to save the interim model")
-	parser.add_argument("-w", "--num_workers", type=int, default=20, help="dataloader worker size")
+	parser.add_argument("-w", "--num_workers", type=int, default=20, help="dataloader worker size (default: 20)")
 
-	parser.add_argument("--with_cuda", type=bool, default=True, help="training with CUDA: true, or false")
-	parser.add_argument("--log_freq", type=int, default=1000, help="printing loss every n iter: setting n")
-	parser.add_argument("--eval_freq", type=int, default=100, help="Evaluate the model every n iter")
+	parser.add_argument("--with_cuda", type=bool, default=True, help="training with CUDA: true, or false (default: True)")
+	parser.add_argument("--log_freq", type=int, default=100, help="Frequency (steps) to print the loss values (default: 100)")
+	parser.add_argument("--eval_freq", type=int, default=10, help="Evaluate the model every n iter (default: 10)")
 	parser.add_argument("--corpus_lines", type=int, default=None, help="total number of lines in corpus")
-	parser.add_argument("--cuda_devices", type=int, nargs='+', default=None, help="CUDA device ids")
-	parser.add_argument("--on_memory", type=bool, default=True, help="Loading on memory: true or false")
+	#parser.add_argument("--cuda_devices", type=int, nargs='+', default=None, help="CUDA device ids")
+	#parser.add_argument("--on_memory", type=bool, default=True, help="Loading on memory: true or false")
 
-	parser.add_argument("--lr", type=float, default=1e-4, help="learning rate of adam")
-	parser.add_argument("--adam_weight_decay", type=float, default=0.01, help="weight_decay of adam")
-	parser.add_argument("--adam_beta1", type=float, default=0.9, help="adam first beta value")
-	parser.add_argument("--adam_beta2", type=float, default=0.98, help="adam second beta value")
-	parser.add_argument("--warm_up", type=int, default=10000, help="steps for warm-up")
-	parser.add_argument("--seed", type=int, default=950410, help="seed number")
-	parser.add_argument("--decrease_steps", type=int, default=1500, help="step to decrease the learning rate")
+	parser.add_argument("--lr", type=float, default=4e-4, help="learning rate of adamW (default: 4e-4)")
+	parser.add_argument("--adam_weight_decay", type=float, default=0.01, help="weight_decay of adamW (default: 0.01)")
+	parser.add_argument("--adam_beta1", type=float, default=0.9, help="adamW first beta value (default: 0.9)")
+	parser.add_argument("--adam_beta2", type=float, default=0.98, help="adamW second beta value (default: 0.98)")
+	parser.add_argument("--warm_up", type=int, default=100, help="steps for warm-up (default: 100)")
+	parser.add_argument("--seed", type=int, default=950410, help="seed number (default: 950410)")
+	parser.add_argument("--decrease_steps", type=int, default=200, help="step to decrease the learning rate (default: 200)")
 
 def preprocess_finetune_arg_parser(subparsers):
 
@@ -72,12 +71,13 @@ def preprocess_finetune_arg_parser(subparsers):
 	parser.add_argument("-d", "--f_dmr", required=True, type=str, help=".bed or .csv file DMRs information is contained")
 	parser.add_argument("-o", "--output_dir", required=True, type=str, help="a directory where all generated results will be saved")
 	parser.add_argument("-r", "--f_ref", required=True, type=str, help=".fasta file containing reference genome")
-	parser.add_argument("-nm", "--n_mers", type=int, default=3, help="n-mers")
-	parser.add_argument("-p", "--split_ratio", type=float, default=0.8, help="the ratio between train and test dataset")
+
+	parser.add_argument("-nm", "--n_mers", type=int, default=3, help="K for K-mer sequences (default: 3)")
+	parser.add_argument("-p", "--split_ratio", type=float, default=0.8, help="the ratio between train and test dataset (default: 0.8)")
 	parser.add_argument("-nd", "--n_dmrs", type=int, default=-1, help="Number of DMRs to take from the dmr file. If the value is not given, all DMRs will be used")
-	parser.add_argument("-c", "--n_cores", type=int, default=1, help="number of cores for the multiprocessing")
-	parser.add_argument("--seed", type=int, default=950410, help="random seed number")
-	parser.add_argument("--ignore_sex_chromo", type=bool, default=True, help="Whether DMRs at sex chromosomes (chrX and chrY) will be ignored")
+	parser.add_argument("-c", "--n_cores", type=int, default=1, help="number of cores for the multiprocessing (default: 1)")
+	parser.add_argument("--seed", type=int, default=950410, help="random seed number (default: 950410)")
+	parser.add_argument("--ignore_sex_chromo", type=bool, default=True, help="Whether DMRs at sex chromosomes (chrX and chrY) will be ignored (default: True)")
 
 def finetune(args):
 	if not os.path.exists(args.output_path):
@@ -91,7 +91,7 @@ def finetune(args):
 	# Set seed
 	set_seed(args.seed)
 
-	print("On memory: ", args.on_memory)
+	#print("On memory: ", args.on_memory)
 
 	# Create a tokenizer
 	print("Create a tokenizer for %d-mers"%(args.n_mers))
