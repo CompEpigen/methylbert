@@ -47,12 +47,11 @@ def grid_search(logits, margins, n_grid, verbose=True):
 
 	# Fisher info calculation
 	fi = np.var([np.abs(grid[0, f+1] -  grid[0, f]) * n_grid for f in range(n_grid-1)])
-
-	return np.argmax(grid, axis=1)*(1/n_grid), fi
+	estimates =  float(np.argmax(grid, axis=1))*(1/n_grid)
+	return [estimates, 1-estimates], fi
 
 
 def grid_search_regions(logits, margins, n_grid, regions):
-	print(logits.shape, regions.shape)
 	regions = pd.DataFrame({
 		"logit1" : logits[:, 0],
 		"logit2" : logits[:, 1],
@@ -64,7 +63,7 @@ def grid_search_regions(logits, margins, n_grid, regions):
 	fi = np.zeros(len(dmr_labels))
 	for idx, dmr_label in enumerate(dmr_labels):
 		dmr_logits = regions[regions["region"] == dmr_label]
-		region_purity[idx], fi[idx] = grid_search(np.array(dmr_logits.loc[:, ["logit1", "logit2"]]), margins, n_grid, verbose=False)
+		region_purity[idx], fi[idx] = grid_search(np.array(dmr_logits.loc[:, ["logit1", "logit2"]]), margins, n_grid, verbose=False)[0]
 
 	# EM algorithm for the adjustment
 	weights = np.ones(len(dmr_labels))
@@ -81,18 +80,18 @@ def grid_search_regions(logits, margins, n_grid, regions):
 				vals = np.where(zero, np.nan, m3 / m2**1.5)
 			return (vals[()])**2 
 
-
 		x = minimize(skewness_test, weights) 
 		weights = x["x"]
 		if abs(estimates - prev_mean) < 0.0001:
 			break
 		prev_mean = estimates
 
-	return [estimates, 1-estimates], fi
+	return [estimates, 1-estimates], list(fi), dmr_labels
 
 def deconvolute(trainer : MethylBertFinetuneTrainer, 
 				data_loader : DataLoader, 
 				df_train : pd.DataFrame, 
+				tokenizer : MethylVocab,
 				output_path : str = "./", 
 				n_grid : int = 10000, 
 				adjustment : bool = False):
@@ -113,10 +112,14 @@ def deconvolute(trainer : MethylBertFinetuneTrainer,
 		Whether you want to conduct the estimation adjustment or not
 	'''
 
+	if not os.path.exists(output_path):
+		os.mkdir(output_path)
+
 	# Read classification
 	total_res, logits = trainer.read_classification(data_loader=data_loader,
 												tokenizer=tokenizer,
 												logit=True)
+	total_res = total_res.drop(columns=["ctype_label"])
 
 	# Save the classification results 
 	total_res.to_csv(output_path+"/res.csv", sep="\t", header=True, index=False)
@@ -135,14 +138,19 @@ def deconvolute(trainer : MethylBertFinetuneTrainer,
 	assert total_res.shape[0] != 0, "There are no reads selected for deconvolution. It may mean all of the reads do not have CpG methylation."
 	
 	if adjustment:
-		estimation, figrid_search_regions(logits, margins, n_grid, total_res["dmr_label"])
+		estimation, fi, dmr_labels = grid_search_regions(total_res.loc[:,["P_N", "P_T"]].to_numpy(), 
+											 margins, n_grid, total_res["dmr_label"])
 	else:
 		estimation, fi = grid_search(logits, margins, n_grid)
 
-	print("Deconvolution result: ", tumour_pred_ratio)
-	pd.DataFrame.from_dict({"cell_type":["T", "N"],
-							"pred":[estimation[0], 1-estimation[0]]}).to_csv(output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
-	pd.DataFrame.from_dict({"fi":fi}).to_csv(output_path+"/FI.csv", sep="\t", header=True, index=False)
+	# Save the results 
+	res = pd.DataFrame.from_dict({"cell_type":["T", "N"],
+							"pred":estimation}).to_csv(output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
+	if type(fi) is not list:
+		fi = [fi]
+		pd.DataFrame.from_dict({"fi":fi}).to_csv(output_path+"/FI.csv", sep="\t", header=True, index=False)
+	else:
+		pd.DataFrame.from_dict({"dmr_label":dmr_labels, "fi":fi}).sort_values("dmr_label").to_csv(output_path+"/FI.csv", sep="\t", header=True, index=False)
 
 if __name__=="__main__":
 	args = arg_parser()
