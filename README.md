@@ -11,8 +11,17 @@ Yunhee Jeong, Karl Rohr, Pavlo Lutsik,
 bioRxiv 2023.10.29.564590; doi: https://doi.org/10.1101/2023.10.29.564590
 
 ## Installation
-You can set up your conda environment with the `setup.py` file. 
+_MethylBERT_ requires __Python>=3.6__
 
+### Pip Installation 
+_MethylBERT_ is available as a [python package](https://pypi.org/project/methylbert/0.0.1/).
+```
+conda create -n methylbert python=3.8
+pip install methylbert
+```
+
+### Manual Installation
+You can set up your conda environment with the `setup.py` file. 
 ```
 conda create -n methylbert python=3.8
 git clone https://github.com/hanyangii/methylbert.git
