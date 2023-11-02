@@ -1,13 +1,15 @@
-## Create n-mers input files from DMRs
+# Data Preparation for your own BAM/SAM file to run _MethylBERT_
 
-MethylBERT requires an input text file containing DNA sequenence + CpG and CHG context methylation pattern. 
-We provide a tool to generate the required input from bam files. 
+## Input requirements
 
-#### 1. BAM File
+In order to run _MethylBERT_, these files are required:
+1. Input bulk sample as a BAM/SAM file
+2. Reference genome as a FASTA file
+3. DMRs as a tab-separated .csv file
+4. (Optional, in case you want to fine-tune the MethylBERT model with your data) Pure tumour and normal samples as BAM/SAM files 
 
-The methylation pattern must be extracted by aligning the samples using `bismark`.
-`bismark` includes `XM` tag for methylation patterns at each read as follows:
-
+#### 1. BAM/SAM File format
+_MethylBERT_ currently supports only [bismark](https://www.bioinformatics.babraham.ac.uk/projects/bismark/)-aligned samples where read-level methylation calls are given with `XM` tag. `XM` tage stores methylation calls as follows: 
 - `x` : Unmethylated cytosine at CHH
 - `X` : Methylated cytosine at CHH
 - `h` : Unmethylated cytosine at CHG context
@@ -15,7 +17,7 @@ The methylation pattern must be extracted by aligning the samples using `bismark
 - `z` : Unmethylated cytosine at CpG context
 - `Z` : Methylated cytosine at CpG context
 
-For example, 
+Each sequence read has its methylation call with `XM` tag like: 
 ```
 SRR5390326.sra.2060072_2060072_length=150       16      chr1    3000485 42      118M    *       0       0 
 AATTTCAACTCTAAATTTAATTATTTCCTACTATCTACTCATCTTAAATAAATTTACTTCCTTTTATTCTAAAACTTCTAAATTTACTATCAAACTACTAATATATACTCTAATTTCC  
@@ -24,18 +26,15 @@ MD:Z:0G6G4G1G3G10G2G12G0G0G1G5G9G5G1G6G4G2G3G0G2G3G1G9G5        XG:Z:GA NM:i:24
 XM:Z:h......x....x.h...h..........x..x............hhh.h.....h.........h.....h.h......h....h..x...xh..x...h.h.........h.....
 XR:Z:CT PG:Z:MarkDuplicates-6C1DF036
 ```
-
-However, we only use methylation patterns at CHG and CpG context.
+If you have any suggestions for a read aligner/mapper or methylation caller to be supported by _MethylBERT_, please leave it in the [issue](https://github.com/hanyangii/methylbert/issues) tab. 
 
 #### 2. Reference file
 
-Since _MethylBERT_ uses a reference genome to find corresponding cytosines, the reference genome used for the alignment must be provided as a __fasta__ file. 
+_MethylBERT_ uses a reference genome to acquire consistent DNA sequences (disregarding SNVs, mutations etc.) for the given sequence reads. The reference genome FASTA file used for aligning the BAM/SAM files should be provided. You can download various reference genomes on the [UCSC](https://hgdownload.soe.ucsc.edu/downloads.html#hg38sequence) web-site. 
 
 #### 3. DMRs
 
-_MethylBert_ deals with only reads overlapping with given genomic regions. For cell-type deconvolution, we strongly recommend to use cell-type differentially methylated regions (DMRs). 
-
-Regions must be given as __BED__ file or __csv__ style file including three columns (chr, start, end). 
+_MethylBERT_ uses only reads overlapping with given differentially methylated regions (DMRs). The DMRs must be given as a tab-separated .csv style file including three columns (chr, start, end):
 
 ```
 chr     start   end     length  nCG     meanMethy1      meanMethy2      diff.Methy      areaStat        ctype
@@ -45,4 +44,7 @@ chr4    107989023       107989302       280     8       0.05951346726543        
 chr17   65373109        65373244        136     5       0.0858110427730819      0.918285474669721       -0.832474431896639      -85.6599363826153       mL6-2
 chr2    83028176        83028389        214     5       0.117763559475859       0.944228847738697       -0.826465288262838      -51.3069729996581       mPv
 ```
-We used [DSS](https://bioconductor.org/packages/release/bioc/html/DSS.html) R package to generate DMRs from single-cell data.
+We used [DSS](https://bioconductor.org/packages/release/bioc/html/DSS.html) R package to call DMRs from pure tumour and normal methylomes.
+
+## Simulated read-level methylomes
+If you want to test MethylBERT or practice the usage of MethylBERT, the simulated read-level methylomes from our [methylseq_simulation](https://github.com/CompEpigen/methylseq_simulation) tool can be used. 
