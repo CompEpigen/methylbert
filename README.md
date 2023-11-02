@@ -3,12 +3,25 @@
 BERT model to classify read-level DNA methylation data into tumour/normal and perform tumour deconvolution.
 _MethylBERT_ is implemented using [pytorch](https://pytorch.org/) and [transformers](https://huggingface.co/docs/transformers/index) 🤗.
 
-## Citation
+## Paper
 _MethylBERT_ paper is now online on [__bioRxiv__](https://www.biorxiv.org/content/10.1101/2023.10.29.564590v1)!!
 
-## Installation
-You can set up your conda environment with the `setup.py` file. 
+MethylBERT: A Transformer-based model for read-level DNA methylation pattern identification and tumour deconvolution,
+Yunhee Jeong, Karl Rohr, Pavlo Lutsik,
+bioRxiv 2023.10.29.564590; doi: https://doi.org/10.1101/2023.10.29.564590
 
+## Installation
+_MethylBERT_ requires __Python>=3.6__
+
+### Pip Installation 
+_MethylBERT_ is available as a [python package](https://pypi.org/project/methylbert/0.0.1/).
+```
+conda create -n methylbert python=3.8
+pip install methylbert
+```
+
+### Manual Installation
+You can set up your conda environment with the `setup.py` file. 
 ```
 conda create -n methylbert python=3.8
 git clone https://github.com/hanyangii/methylbert.git
@@ -157,4 +170,18 @@ optional arguments:
                         have enough memory to run the software (default: 64)
   --save_logit          Save logits from the model (default: False)
   --adjustment          Adjust the estimated tumour purity (default: False)
+```
+## Citation
+```
+@article {Jeong2023.10.29.564590,
+	author = {Yunhee Jeong and Karl Rohr and Pavlo Lutsik},
+	title = {MethylBERT: A Transformer-based model for read-level DNA methylation pattern identification and tumour deconvolution},
+	elocation-id = {2023.10.29.564590},
+	year = {2023},
+	doi = {10.1101/2023.10.29.564590},
+	publisher = {Cold Spring Harbor Laboratory},
+	URL = {https://www.biorxiv.org/content/early/2023/11/01/2023.10.29.564590},
+	eprint = {https://www.biorxiv.org/content/early/2023/11/01/2023.10.29.564590.full.pdf},
+	journal = {bioRxiv}
+}
 ```
