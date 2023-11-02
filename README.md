@@ -1,23 +1,27 @@
-# MethylBERT
-Pytorch BERT model to train methylation data 
+# MethylBERT: A Transformer-based model for read-level DNA methylation pattern identification and tumour deconvolution
 
+BERT model to classify read-level DNA methylation data into tumour/normal and perform tumour deconvolution.
+_MethylBERT_ is implemented using [pytorch](https://pytorch.org/) and [transformers](https://huggingface.co/docs/transformers/index) 🤗.
 
-## Setup
-You can set up your own conda environment with the __requirements.txt__ file. 
+## Citation
+_MethylBERT_ paper is now online on [__bioRxiv__](https://www.biorxiv.org/content/10.1101/2023.10.29.564590v1)!!
+
+## Installation
+You can set up your conda environment with the `setup.py` file. 
 
 ```
-conda create -n methylbert python=3.6
-conda activate methylbert
-conda install pytorch torchvision -c pytorch
-
-git clone https://github.com/hanyangii/MethylBERT.git
-cd MethylBERT
-python3 -m pip install -r requirements.txt
+conda create -n methylbert python=3.8
+git clone https://github.com/hanyangii/methylbert.git
+cd methylbert
+pip3 install .
 ```
 
 ## Quick start
+### Python library
+If you want to use _MethylBERT_ as a python library, please follow the [tutorials](https://github.com/hanyangii/methylbert/tree/main/tutorials).
+
 ### Command line
-MethylBERT supports a command line tool
+MethylBERT supports a command line tool. Before using the command line tool, please check [the input file requirements](https://github.com/hanyangii/methylbert/blob/main/tutorials/01_Data_Preparation.md)
 ```
 > methylbert 
 MethylBERT v0.0.1
