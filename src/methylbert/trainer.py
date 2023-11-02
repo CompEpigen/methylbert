@@ -109,6 +109,9 @@ class MethylBertTrainer(object):
         self.save_path = save_path
         if save_path and not os.path.exists(save_path):
             os.mkdir(save_path)
+        self.f_train = os.path.join(self.save_path, "train.csv")
+        self.f_eval = os.path.join(self.save_path, "eval.csv")
+
 
     def save(self, file_path="output/bert_trained.model"):
         '''
@@ -136,7 +139,7 @@ class MethylBertTrainer(object):
             self.model = nn.DataParallel(self.model)
 
         if not self._config.eval:
-            # Setting the Adam optimizer with hyper-param
+            # Setting the AdamW optimizer with hyper-param
             self.optim = AdamW(self.model.parameters(), 
                                lr=self._config.lr, betas=self._config.beta, eps=self._config.eps, weight_decay=self._config.weight_decay)
 
@@ -311,16 +314,16 @@ class MethylBertPretrainTrainer(MethylBertTrainer):
         predict_res = {"prediction": [], "input": [], "label": []}
         self.step = 0
 
-        if os.path.exists(self.save_path.split(".")[0]+"_train.csv"):
-            os.remove(self.save_path.split(".")[0]+"_train.csv")
+        if os.path.exists(self.f_train):
+            os.remove(self.f_train)
 
-        with open(self.save_path.split(".")[0]+"_train.csv", "a") as f_perform:
+        with open(self.f_train, "a") as f_perform:
             f_perform.write("step\tloss\tacc\tlr\n")
 
-        if os.path.exists(self.save_path.split(".")[0]+"_eval.csv"):
-            os.remove(self.save_path.split(".")[0]+"_eval.csv")
+        if os.path.exists(self.f_eval):
+            os.remove(self.f_eval)
 
-        with open(self.save_path.split(".")[0]+"_eval.csv", "a") as f_perform:
+        with open(self.f_eval, "a") as f_perform:
             f_perform.write("step\ttest_acc\ttest_loss\n")
 
 
@@ -393,7 +396,7 @@ class MethylBertPretrainTrainer(MethylBertTrainer):
                         test_pred_acc = self._acc(test_pred["prediction"][idces[0], idces[1]], 
                                                   test_pred["label"][idces[0], idces[1]])
 
-                        with open(self.save_path.split(".")[0]+"_eval.csv", "a") as f_perform:
+                        with open(self.f_eval, "a") as f_perform:
                             f_perform.write("\t".join([str(self.step), str(test_pred_acc), str(test_loss)]) +"\n")
 
                         del test_pred
@@ -408,7 +411,7 @@ class MethylBertPretrainTrainer(MethylBertTrainer):
                         self.min_loss = global_step_loss
 
                     # Save the step info (step, loss, lr, acc)
-                    with open(self.save_path.split(".")[0]+"_train.csv", "a") as f_perform:
+                    with open(self.f_train, "a") as f_perform:
 
                         train_prediction_res["prediction"] = np.concatenate(train_prediction_res["prediction"], axis=0)
                         train_prediction_res["label"] = np.concatenate(train_prediction_res["label"],  axis=0)
@@ -530,16 +533,17 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
         """
         
         self.step = 0
-        if os.path.exists(self.save_path.split(".")[0]+"_train.csv"):
-            os.remove(self.save_path.split(".")[0]+"_train.csv")
+        
+        if os.path.exists(self.f_train):
+            os.remove(self.f_train)
 
-        with open(self.save_path.split(".")[0]+"_train.csv", "a") as f_perform:
+        with open(self.f_train, "w") as f_perform:
             f_perform.write("step\tloss\tctype_acc\tlr\n")
 
-        if os.path.exists(self.save_path.split(".")[0]+"_eval.csv"):
-            os.remove(self.save_path.split(".")[0]+"_eval.csv")
+        if os.path.exists(self.f_eval):
+            os.remove(self.f_eval)
 
-        with open(self.save_path.split(".")[0]+"_eval.csv", "a") as f_perform:
+        with open(self.f_eval, "w") as f_perform:
             f_perform.write("step\tloss\tctype_acc\n")
 
 
@@ -612,7 +616,7 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                     eval_pred, eval_loss = self._eval_iteration(self.test_data)
                     eval_acc = self._acc(eval_pred["pred_ctype_label"], eval_pred["ctype_label"])
 
-                    with open(self.save_path.split(".")[0]+"_eval.csv", "a") as f_perform:
+                    with open(self.f_eval, "a") as f_perform:
                         f_perform.write("\t".join([str(self.step), str(eval_loss), str(eval_acc)]) +"\n")
 
                     del eval_pred
@@ -636,7 +640,7 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                         self.save(step_save_dir)
                                         
                     # Save the step info (step, loss, lr, acc)
-                    with open(self.save_path.split(".")[0]+"_train.csv", "a") as f_perform:
+                    with open(self.f_train, "a") as f_perform:
 
                         train_prediction_res["dmr_label"] = np.concatenate(train_prediction_res["dmr_label"],  axis=0)
                         train_prediction_res["pred_ctype_label"] = np.concatenate(train_prediction_res["pred_ctype_label"], axis=0)
