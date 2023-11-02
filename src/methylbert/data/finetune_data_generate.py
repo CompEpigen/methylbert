@@ -293,9 +293,9 @@ def finetune_data_generate(
 
     # Save DMRs in a new file 
     dmrs.to_csv(fp_dmr, sep="\t", index=False)
-    print(dmrs)
+    print(dmrs.head())
 
-    print(f"Number of DMRs to extract sequencing reads: {len(dmrs)}")
+    print(f"Number of DMRs to extract sequence reads: {len(dmrs)}")
 
     # check whether the input is a file or a file list
     if ( not sc_dataset ) and ( not input_file ):
@@ -312,18 +312,12 @@ def finetune_data_generate(
         sys.exit("Either a list of input files or a file path must be given.")
     
     # Collect reads from the .bam files
-    print("Number of cpu : ", mp.cpu_count())
     df_reads = list()
     for f_sc in sc_files:
         f_sc = f_sc.strip().split("\t")
         f_sc_bam = f_sc[0]
 
-        if len(f_sc) > 1:
-            f_sc_ctype = f_sc[1]
-            print(f"{f_sc_bam} processing ({f_sc_ctype})...")
-        else:
-            f_sc_ctype = "NA"
-            print(f"{f_sc_bam} processing...")
+        
 
         extracted_reads = read_extract(f_sc_bam, dict_ref, k=3, dmrs=dmrs, ncores=n_cores)
         if extracted_reads is None:
@@ -336,8 +330,12 @@ def finetune_data_generate(
             #extracted_reads["ctype"] = [c.split("_")[1][:3]+"-"+c.split("_")[1][3] for c in extracted_reads["read_ctype"]] # mouse single-cell
             extracted_reads["ctype"] = [c.split("_")[1] for c in extracted_reads["read_ctype"]] # tumour pseudo bulk
         else:
-        '''    
-        extracted_reads["ctype"] = f_sc_ctype
+        '''
+        if len(f_sc) > 1:
+            print(f"{f_sc_bam} processing ({f_sc[1]})...")
+            extracted_reads["ctype"] = f_sc[1]
+        else:
+            extracted_reads["ctype"] = "NA"
         extracted_reads = extracted_reads.rename(columns={"RF":"dna_seq", "ME":"methyl_seq"})
 
         if(extracted_reads.shape[0] > 0):
@@ -346,7 +344,7 @@ def finetune_data_generate(
     # Integrate all reads and shuffle
     if len(df_reads) > 0:
         df_reads = pd.concat(df_reads, ignore_index=True).sample(frac=1).reset_index(drop=True) # sample is for shuffling
-        print("Fine tuning data generated:", df_reads.head())
+        print("Fine-tuning data generated:", df_reads.head())
     else:
         ValueError("Could not find any reads overlapping with the given DMRs. Please try different regions.")
 
