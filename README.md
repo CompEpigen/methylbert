@@ -1,5 +1,8 @@
 # MethylBERT: A Transformer-based model for read-level DNA methylation pattern identification and tumour deconvolution
 
+![methylbert_scheme](https://github.com/CompEpigen/methylbert/blob/main/img/introduction_methylbert.png)
+_The figure was generated using [biorender](https://www.biorender.com/)_
+
 BERT model to classify read-level DNA methylation data into tumour/normal and perform tumour deconvolution.
 _MethylBERT_ is implemented using [pytorch](https://pytorch.org/) and [transformers](https://huggingface.co/docs/transformers/index) 🤗.
 
