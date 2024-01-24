@@ -1,5 +1,8 @@
 # MethylBERT: A Transformer-based model for read-level DNA methylation pattern identification and tumour deconvolution
 
+![methylbert_scheme](https://github.com/CompEpigen/methylbert/blob/main/img/introduction_methylbert.png)
+_The figure was generated using [biorender](https://www.biorender.com/)_
+
 BERT model to classify read-level DNA methylation data into tumour/normal and perform tumour deconvolution.
 _MethylBERT_ is implemented using [pytorch](https://pytorch.org/) and [transformers](https://huggingface.co/docs/transformers/index) 🤗.
 
@@ -173,15 +176,12 @@ optional arguments:
 ```
 ## Citation
 ```
-@article {Jeong2023.10.29.564590,
-	author = {Yunhee Jeong and Karl Rohr and Pavlo Lutsik},
-	title = {MethylBERT: A Transformer-based model for read-level DNA methylation pattern identification and tumour deconvolution},
-	elocation-id = {2023.10.29.564590},
-	year = {2023},
-	doi = {10.1101/2023.10.29.564590},
-	publisher = {Cold Spring Harbor Laboratory},
-	URL = {https://www.biorxiv.org/content/early/2023/11/01/2023.10.29.564590},
-	eprint = {https://www.biorxiv.org/content/early/2023/11/01/2023.10.29.564590.full.pdf},
-	journal = {bioRxiv}
+@article{jeong2023methylbert,
+  title={MethylBERT: A Transformer-based model for read-level DNA methylation pattern identification and tumour deconvolution},
+  author={Jeong, Yunhee and Rohr, Karl and Lutsik, Pavlo},
+  journal={bioRxiv},
+  pages={2023--10},
+  year={2023},
+  publisher={Cold Spring Harbor Laboratory}
 }
 ```
