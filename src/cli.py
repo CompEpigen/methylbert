@@ -268,5 +268,6 @@ def main(args=None):
 	elif selected_option == "deconvolute":
 		deconvolute_arg_parser(subparsers)
 		args = parser_init.parse_args()
+		run_deconvolute(args)
 	else:
 		print(f"The option must be chosen in {options}")
