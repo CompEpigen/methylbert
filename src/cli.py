@@ -1,11 +1,15 @@
 import argparse, sys, os 
 
-from methylbert.data.finetune_data_generate import finetune_data_generate
+import pickle as pk
+import pandas as pd
+import numpy as np 
 
+from methylbert.data.finetune_data_generate import finetune_data_generate
 from methylbert.trainer import MethylBertFinetuneTrainer
 from methylbert.data.vocab import MethylVocab
 from methylbert.data.dataset import MethylBertFinetuneDataset
 from methylbert.utils import set_seed
+from methylbert.deconvolute import grid_search, grid_search_regions
 from methylbert import __version__
 
 import torch
@@ -14,7 +18,7 @@ from torch.utils.data import DataLoader
 def deconvolute_arg_parser(subparsers):
 	parser = subparsers.add_parser('deconvolute', help='Run MethylBERT tumour deconvolution')
 
-	parser.add_argument("-i", "--input_data", required=True, type=str, help="Bulk data to deconvolve")
+	parser.add_argument("-i", "--input_data", required=True, type=str, help="Bulk data to deconvolute")
 	parser.add_argument("-m", "--model_dir", required=True, type=str, help="Trained methylbert model")
 	parser.add_argument("-o", "--output_path", type=str, default="./", help="Directory to save deconvolution results. (default: ./)")
 
@@ -169,18 +173,18 @@ def run_deconvolute(args):
 		for li in fp.readlines():
 			li = li.strip().split('\t')
 			params[li[0]] = li[1]
-	print("Restored parameters: %s", params)
+	print("Restored parameters: %s"%params)
 
 	# Create a result directory
 	if not os.path.exists(args.output_path):
 		os.mkdir(args.output_path)
-		print("New directory %s is created", args.output_path)
+		print("New directory %s is created"%args.output_path)
 
 	# Restore the model
 	tokenizer=MethylVocab(k=int(params["n_mers"]))
 	dataset = MethylBertFinetuneDataset(args.input_data, tokenizer, seq_len=int(params["seq_len"]))
 	data_loader = DataLoader(dataset, batch_size=args.batch_size, num_workers=40)
-	print("Bulk data (%s) is loaded", args.input_data)
+	print("Bulk data (%s) is loaded"%args.input_data)
 
 	restore_dir = os.path.join(args.model_dir, "bert.model/")
 	trainer = MethylBertFinetuneTrainer(len(tokenizer), save_path='./test',
@@ -190,7 +194,7 @@ def run_deconvolute(args):
 										#loss=params["loss"] if "loss" in params.keys() else "bce"
 										)
 	trainer.load(restore_dir, n_dmrs=100)
-	print("Trained model (%s) is restored", restore_dir)
+	print("Trained model (%s) is restored"%restore_dir)
 
 	# Read classification
 	total_res, logits = trainer.read_classification(data_loader=data_loader,
@@ -216,7 +220,7 @@ def run_deconvolute(args):
 	
 	# Tumour-normal deconvolution
 	margins = df_train.value_counts("ctype", normalize=True)[["N","T"]].tolist()
-	print("Margins : ", margins)
+	print("Margins (normal, tumour) : ", margins)
 	print(total_res.head())
 	if ("T" in total_res["ctype"]) and ("N" in total_res["ctype"]):
 		print(total_res.value_counts("ctype", normalize=True)[["N","T"]].tolist(), margins)
@@ -225,14 +229,18 @@ def run_deconvolute(args):
 	total_res  = total_res[total_res["n_cpg"]>0]
 	
 	if args.adjustment:
-		tumour_pred_ratio, fi = deconvolve(logits=logits, margins=margins, dmr_labels=total_res["dmr_label"])
+		tumour_pred_ratio, fi, dmr_labels = grid_search_regions(logits=logits, margins=margins, n_grid=10000,regions=total_res["dmr_label"])
 	else:
-		tumour_pred_ratio, fi = deconvolve(logits=logits, margins=margins)
+		tumour_pred_ratio, fi = grid_search(logits=logits, margins=margins, n_grid=10000)
 	
 	print("Deconvolution result: ", tumour_pred_ratio)
 	pd.DataFrame.from_dict({"cell_type":["T", "N"],
-							"pred":[tumour_pred_ratio, 1-tumour_pred_ratio]}).to_csv(args.output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
-	pd.DataFrame.from_dict({"fi":fi}).to_csv(args.output_path+"/FI.csv", sep="\t", header=True, index=False)
+							"pred":tumour_pred_ratio}).to_csv(args.output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
+	if type(fi) is not list:
+		fi = [fi]
+		pd.DataFrame.from_dict({"fi":fi}).to_csv(args.output_path+"/FI.csv", sep="\t", header=True, index=False)
+	else:
+		pd.DataFrame.from_dict({"dmr_label":dmr_labels, "fi":fi}).sort_values("dmr_label").to_csv(args.output_path+"/FI.csv", sep="\t", header=True, index=False)
 
 def main(args=None):
 	print(f"MethylBERT v{__version__}")
