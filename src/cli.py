@@ -200,6 +200,7 @@ def run_deconvolute(args):
 	total_res, logits = trainer.read_classification(data_loader=data_loader,
 												tokenizer=tokenizer,
 												logit=True)
+	print(total_res, logits)
 
 	# Save the classification results 
 	total_res.to_csv(args.output_path+"/res.csv", sep="\t", header=True, index=False)

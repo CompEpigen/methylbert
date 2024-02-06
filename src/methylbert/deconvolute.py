@@ -231,9 +231,9 @@ if __name__=="__main__":
 		total_res  = total_res[total_res["n_cpg"]>0]
 		
 		if args.adjustment:
-			tumour_pred_ratio, fi = deconvolve(logits=logits, margins=margins, dmr_labels=total_res["dmr_label"])
+			tumour_pred_ratio, fi = deconvolute(logits=logits, margins=margins, dmr_labels=total_res["dmr_label"])
 		else:
-			tumour_pred_ratio, fi = deconvolve(logits=logits, margins=margins)
+			tumour_pred_ratio, fi = deconvolute(logits=logits, margins=margins)
 		print("Deconvolution result: ", tumour_pred_ratio)
 		pd.DataFrame.from_dict({"cell_type":["T", "N"],
 								"pred":[tumour_pred_ratio, 1-tumour_pred_ratio]}).to_csv(args.output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
@@ -255,7 +255,7 @@ if __name__=="__main__":
 			ctype_logits = ctype_logits[ctype_reads["n_cpg"]>0,]
 
 			print(logits[0,:], margins)
-			tumour_pred_ratio = deconvolve(logits=ctype_logits, margins=[margins["N"], margins[dmr_ctype]])
+			tumour_pred_ratio = deconvolute(logits=ctype_logits, margins=[margins["N"], margins[dmr_ctype]])
 			estimated_tumour_proportions[dmr_ctype] = tumour_pred_ratio
 
 		pd.DataFrame.from_dict({"cell_type":list(estimated_tumour_proportions.keys()),

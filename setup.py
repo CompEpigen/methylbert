@@ -12,7 +12,7 @@ setup(name='methylbert',
 	install_requires=[
 		'Bio', 
 		'matplotlib',
-		'numpy',
+		'numpy<1.21',
 		'pandas',
 		'pysam',
 		'scikit_learn',
@@ -38,3 +38,4 @@ setup(name='methylbert',
 	}
 
 )
+	
