@@ -1,7 +1,9 @@
 from setuptools import setup
 from setuptools import find_packages
 
-import os, glob
+import os, glob, warnings
+
+warnings.filterwarnings("ignore")
 
 setup(name='methylbert',
 	version='0.0.1',
@@ -11,15 +13,19 @@ setup(name='methylbert',
 
 	install_requires=[
 		'Bio', 
-		'matplotlib',
+		'biopython==1.81',
+		'matplotlib<3.3',
 		'numpy<1.21',
-		'pandas',
+		'pandas<1.4.0',
 		'pysam',
-		'scikit_learn',
-		'scipy',
+		'scikit_learn<1.1.0',
+		'scipy<1.7.0',
 		'torch>=1.10.0',
 		'tqdm',
-		'transformers>=2,<3'
+		'transformers>=2,<2.6',
+		'tokenizers<0.6.0',
+		'urllib3<1.27,>=1.25.4',
+		'zipp==3.13.0'
 	],
 
     py_modules=[os.path.splitext(os.path.basename(path))[0] for path in glob.glob("src/*.py")]+ \
