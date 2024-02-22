@@ -13,7 +13,7 @@ setup(name='methylbert',
 
 	install_requires=[
 		'Bio', 
-		'biopython==1.81',
+		'biopython<=1.81',
 		'matplotlib<3.3',
 		'numpy<1.21',
 		'pandas<1.4.0',
