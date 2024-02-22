@@ -40,7 +40,6 @@ def _line2tokens_finetune(l, tokenizer, max_len=150, headers=None):
 
 	l["dna_seq"] = l["dna_seq"].split(" ")
 	l["dna_seq"] = [[f] for f in tokenizer.to_seq(l["dna_seq"])]
-	#print(l["dna_seq"])
 	l["methyl_seq"] = [int(m) for m in l["methyl_seq"]]
 
 	# Cell-type label is binary (whether the cell type corresponds to the DMR cell type)
@@ -90,6 +89,8 @@ class MethylBertPretrainDataset(MethylBertDataset):
 			print("Lines are processed")
 			self.lines = torch.squeeze(torch.tensor(np.array(line_labels, dtype=np.int16)))
 		del line_labels
+
+		self.set_dmr_labels = set([l["dmr_label"] for l in self.lines])
 
 	def __getitem__(self, index): 
 
@@ -253,7 +254,7 @@ class MethylBertFinetuneDataset(MethylBertDataset):
 		return label_count
 
 	def num_dmrs(self):
-		return len(set([l["dmr_label"] for l in self.lines]))
+		return max(len(set_dmr_labels), max(set_dmr_labels)+1) # +1 is for the label 0
 	
 	def subset_data(self, n_seq):
 		self.lines = self.lines[:n_seq]

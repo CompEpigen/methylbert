@@ -44,7 +44,6 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
     def from_pretrained_dmr_encoder(self, pretrained_model_name_or_path, device="cpu"):
         self.dmr_encoder.load_state_dict(torch.load(pretrained_model_name_or_path, map_location=device))
         
-
     def forward(
         self,
         step,

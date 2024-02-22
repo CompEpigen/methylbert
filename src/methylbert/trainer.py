@@ -177,43 +177,12 @@ class MethylBertTrainer(object):
         # Initialize the model
         self._setup_model()
 
-    '''
-    def _create_BERT_MLM(self):
-        print('Create a new bert model with a new configuration file')
-        config = BertConfig(vocab_size = len(self.train_data.dataset.vocab),
-                        hidden_size = self.config.hidden, 
-                        num_hidden_layers = self.config.layers,
-                        num_attention_heads = self.config.attn_heads,
-                        hidden_act = "gelu", 
-                        hidden_dropout_prob=0.1,
-                        attention_probs_dropout_prob=0.1)
-    
-        self.bert = BertForMaskedLM(config)
-
-    '''
-
     def create_model(self, config_file=None):
         """
         Create a new BERT MLM model from the configuration
         :param config_file: path to the configuration file
         """
         pass
-        '''
-        if config_file:
-            print("Create a bert model from the configuration file %s"%(config_file))
-            config = BertConfig.from_pretrained(config_file, num_labels=self.train_data.dataset.num_dmrs(), 
-                output_attentions=True, 
-                output_hidden_states=True, 
-                hidden_dropout_prob=0.01, 
-                vocab_size = len(self.train_data.dataset.vocab))
-        
-            self.bert = BertForSequenceClassification(config=config)
-
-        else:
-            self._create_BERT_MLM()
-    
-        self._setup_model()
-        '''
 
     def _acc(self, pred, label):
         """
@@ -680,35 +649,46 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
         self.bert.to(self.device)
         print("Step:%d Model Saved on:" % self.step, file_path)
         
-    def load(self, dir_path: str, n_dmrs: int=None):
+    def load(self, dir_path: str, n_dmrs: int=None, load_fine_tune: bool=False):
         '''
         Load pre-trained / fine-tuned MethylBERT model 
         dir_path: str
             Directory to the saved bert model. It must contain "config.json" and "pytorch_model.bin" files
         n_dmrs: int (default: None)
             Number of DMRs to reconstruct the MethylBERT model. If the number is not given, the trainer auto-calculates the number from the same data
+        load_fine_tune: bool (default: False)
+            Whether the loaded model is a fine-tuned model including num_dmrs or a pre-trained model without num_dmrs
         '''
         print(f"Restore the pretrained model {dir_path}")
 
-        self.bert = MethylBertEmbeddedDMR.from_pretrained(dir_path, 
-            num_labels=self.train_data.dataset.num_dmrs() if not n_dmrs else n_dmrs, 
-            output_attentions=True, 
-            output_hidden_states=True, 
-            seq_len = self.train_data.dataset.seq_len
-            )
+        if load_fine_tune:
+            if n_dmrs is not None:
+                raise ValueError("You cannot give a new number of DMRs for loading a fine-tuned model. The model should contains one. Please set either n_dmrs=None or load_fine_tune=False")
+            self.bert = MethylBertEmbeddedDMR.from_pretrained(dir_path, 
+                output_attentions=True, 
+                output_hidden_states=True, 
+                seq_len = self.train_data.dataset.seq_len
+                )
+            
+            try:
+                self.bert.from_pretrained_dmr_encoder(os.path.dirname(dir_path)+"/dmr_encoder.pickle", self.device)
+                print("Restore DMR encoder from %s"%(os.path.dirname(dir_path)+"/dmr_encoder.pickle"))
+            except FileNotFoundError:
+                print(os.path.dirname(dir_path)+"/dmr_encoder.pickle is not found.")
 
-        try:
-            self.bert.from_pretrained_dmr_encoder(os.path.dirname(dir_path)+"/dmr_encoder.pickle", self.device)
-            print("Restore DMR encoder from %s"%(os.path.dirname(dir_path)+"/dmr_encoder.pickle"))
-        except FileNotFoundError:
-            print(os.path.dirname(dir_path)+"/dmr_encoder.pickle is not found. DMR encoder will be initialised.")
+            try:
+                self.bert.from_pretrained_read_classifier(os.path.dirname(dir_path)+"/read_classification_model.pickle", self.device)
+                print("Restore read classification FCN model from %s"%(os.path.dirname(dir_path)+"/read_classification_model.pickle"))
+            except FileNotFoundError:
+                print(os.path.dirname(dir_path)+"/read_classification_model.pickle is not found.")
+        else:
+            self.bert = MethylBertEmbeddedDMR.from_pretrained(dir_path, 
+                num_labels=self.train_data.dataset.num_dmrs() if not n_dmrs else n_dmrs, 
+                output_attentions=True, 
+                output_hidden_states=True, 
+                seq_len = self.train_data.dataset.seq_len
+                )
 
-        try:
-            self.bert.from_pretrained_read_classifier(os.path.dirname(dir_path)+"/read_classification_model.pickle", self.device)
-            print("Restore read classification FCN model from %s"%(os.path.dirname(dir_path)+"/read_classification_model.pickle"))
-        except FileNotFoundError:
-            print(os.path.dirname(dir_path)+"/read_classification_model.pickle is not found. Read classification model will be initialised.")
-        
         self._setup_model()
 
     def read_classification(self, data_loader: DataLoader = None, tokenizer: MethylVocab = None, logit: bool = False):
@@ -725,7 +705,7 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
 
         if data_loader is None:
             if self.test_data is None:
-                ValueError("There is not test_data assigned to the trainer. Please give a DataLoader as an input.")
+                ValueError("There is no test_data assigned to the trainer. Please give a DataLoader as an input.")
             else:
                 data_loader = self.test_data
 

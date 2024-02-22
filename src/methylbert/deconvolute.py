@@ -188,7 +188,7 @@ if __name__=="__main__":
 											test_dataloader=data_loader,
 											methyl_learning=params["methyl_learning"] if "methyl_learning" in params.keys() else "cnn",
 											loss=params["loss"] if "loss" in params.keys() else "bce")
-		trainer.load(restore_dir, n_dmrs=100)
+		trainer.load(restore_dir, load_fine_tune=True)
 		logging.info("Trained model (%s) is restored", restore_dir)
 
 		# Read classification

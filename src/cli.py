@@ -145,9 +145,7 @@ def finetune(args):
 						  gradient_accumulation_steps=args.gradient_accumulation_steps, 
 						  max_grad_norm = args.max_grad_norm,
 						  warmup_step=args.warm_up,
-						  #loss=args.loss,
 						  decrease_steps=args.decrease_steps,
-						  #methyl_learning=args.methyl_learning,
 						  save_freq=args.save_freq)
 
 	if args.pretrain:
@@ -190,10 +188,8 @@ def run_deconvolute(args):
 	trainer = MethylBertFinetuneTrainer(len(tokenizer), save_path='./test',
 										train_dataloader=data_loader, 
 										test_dataloader=data_loader,
-										#methyl_learning=params["methyl_learning"] if "methyl_learning" in params.keys() else "cnn",
-										#loss=params["loss"] if "loss" in params.keys() else "bce"
 										)
-	trainer.load(restore_dir, n_dmrs=100)
+	trainer.load(restore_dir, load_fine_tune=True)
 	print("Trained model (%s) is restored"%restore_dir)
 
 	# Read classification
