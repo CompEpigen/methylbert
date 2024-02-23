@@ -6,11 +6,23 @@ import numpy as np
 import math, os
 from copy import deepcopy
 
-from transformers import BertPreTrainedModel, BertModel
+from transformers import BertPreTrainedModel, BertModel, BertForMaskedLM, BertConfig
 
-#class MethylBertForSequenceClassification(BertPreTrainedModel):
+
+METHYLBERT_PRETRAINED_MODEL_ARCHIVE_MAP = {
+    "hanyangii/methylbert_hg19_12l": "https://huggingface.co/hanyangii/methylbert_hg19_12l/resolve/main/pytorch_model.bin"
+}
+METHYLBERT_PRETRAINED_CONFIG_ARCHIVE_MAP = {
+    "hanyangii/methylbert_hg19_12l": "https://huggingface.co/hanyangii/methylbert_hg19_12l/raw/main/config.json"
+}
+
+class MethylBERTConfig(BertConfig):
+    pretrained_config_archive_map = METHYLBERT_PRETRAINED_CONFIG_ARCHIVE_MAP
 
 class MethylBertEmbeddedDMR(BertPreTrainedModel):
+    pretrained_model_archive_map = METHYLBERT_PRETRAINED_MODEL_ARCHIVE_MAP
+    config_class = MethylBERTConfig
+
     def __init__(self, config, seq_len=150, loss="bce"):
         super().__init__(config)
         self.num_labels = config.num_labels
