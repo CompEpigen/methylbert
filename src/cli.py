@@ -31,13 +31,23 @@ def deconvolute_arg_parser(subparsers):
 def finetune_arg_parser(subparsers):
 	parser = subparsers.add_parser('finetune', help='Run MethylBERT fine-tuning')
 
+	# Data and directory paths
 	parser.add_argument("-c", "--train_dataset", required=True, type=str, help="train dataset for train bert")
 	parser.add_argument("-t", "--test_dataset", type=str, default=None, help="test set for evaluate train set")
 	parser.add_argument("-o", "--output_path", required=True, type=str, help="ex)output/bert.model")
-	parser.add_argument("-p", "--pretrain", type=str, default=None, help="a saved pretrained model to restore")
-	parser.add_argument("-nm", "--n_mers", type=int, default=3, help="n-mers (default: 3)")
+
+	# For a pre-trained model
+	parser.add_argument("-p", "--pretrain", type=str, default=None, help="path to the saved pretrained model to restore")
+	parser.add_argument("-l", "--n_encoder", type=int, default=None, help="number of encoder blocks. One of [12, 8, 6] need to be given. A pre-trained MethylBERT model is downloaded accordingly. Ignored when -p (--pretrain) is given.")
 	
+	# Hyperparams for input data processing
+	parser.add_argument("-nm", "--n_mers", type=int, default=3, help="n-mers (default: 3)")
 	parser.add_argument("-s", "--seq_len", type=int, default=150, help="maximum sequence len (default: 150)")
+	parser.add_argument("-b", "--batch_size", type=int, default=50, help="number of batch_size (default: 50)")
+	parser.add_argument("--valid_batch", type=int, default=-1, help="number of batch_size in valid set. If it's not given, valid_set batch size is set same as the train_set batch size")
+	parser.add_argument("--corpus_lines", type=int, default=None, help="total number of lines in corpus")
+	
+	# Hyperparams for training
 	parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Max gradient norm (default: 1.0)")
 	parser.add_argument(
 		"--gradient_accumulation_steps",
@@ -45,8 +55,6 @@ def finetune_arg_parser(subparsers):
 		default=1,
 		help="Number of updates steps to accumulate before performing a backward/update pass. (default: 1)",
 	)
-	parser.add_argument("-b", "--batch_size", type=int, default=50, help="number of batch_size (default: 50)")
-	parser.add_argument("--valid_batch", type=int, default=-1, help="number of batch_size in valid set. If it's not given, valid_set batch size is set same as the train_set batch size")
 	parser.add_argument("-e", "--steps", type=int, default=600, help="number of training steps (default: 600)")
 	parser.add_argument("--save_freq", type=int, default=None, help="Steps to save the interim model")
 	parser.add_argument("-w", "--num_workers", type=int, default=20, help="dataloader worker size (default: 20)")
@@ -54,18 +62,16 @@ def finetune_arg_parser(subparsers):
 	parser.add_argument("--with_cuda", type=bool, default=True, help="training with CUDA: true, or false (default: True)")
 	parser.add_argument("--log_freq", type=int, default=100, help="Frequency (steps) to print the loss values (default: 100)")
 	parser.add_argument("--eval_freq", type=int, default=10, help="Evaluate the model every n iter (default: 10)")
-	parser.add_argument("--corpus_lines", type=int, default=None, help="total number of lines in corpus")
-	#parser.add_argument("--cuda_devices", type=int, nargs='+', default=None, help="CUDA device ids")
-	#parser.add_argument("--on_memory", type=bool, default=True, help="Loading on memory: true or false")
-
 	parser.add_argument("--lr", type=float, default=4e-4, help="learning rate of adamW (default: 4e-4)")
 	parser.add_argument("--adam_weight_decay", type=float, default=0.01, help="weight_decay of adamW (default: 0.01)")
 	parser.add_argument("--adam_beta1", type=float, default=0.9, help="adamW first beta value (default: 0.9)")
 	parser.add_argument("--adam_beta2", type=float, default=0.98, help="adamW second beta value (default: 0.98)")
 	parser.add_argument("--warm_up", type=int, default=100, help="steps for warm-up (default: 100)")
-	parser.add_argument("--seed", type=int, default=950410, help="seed number (default: 950410)")
 	parser.add_argument("--decrease_steps", type=int, default=200, help="step to decrease the learning rate (default: 200)")
 
+	# Others
+	parser.add_argument("--seed", type=int, default=950410, help="seed number (default: 950410)")
+	
 def preprocess_finetune_arg_parser(subparsers):
 
 	parser = subparsers.add_parser('preprocess_finetune', help='Preprocess .bam files for finetuning')
@@ -83,7 +89,15 @@ def preprocess_finetune_arg_parser(subparsers):
 	parser.add_argument("--seed", type=int, default=950410, help="random seed number (default: 950410)")
 	parser.add_argument("--ignore_sex_chromo", type=bool, default=True, help="Whether DMRs at sex chromosomes (chrX and chrY) will be ignored (default: True)")
 
-def finetune(args):
+def run_finetune(args):
+	# Set up pre-trained model
+	if ( args.pretrain is None ) and ( args.n_encoder is None ):
+		raise ValueError("Either -p (--pretrain) or -l (--n_encoder) need to be given to find a pre-trained model.")
+	elif args.pretrain is None:
+		print(f"Pre-trained MethylBERT model for {args.n_encoder} encoder blocks is selected.")
+		args.pretrain = f"hanyangii/methylbert_hg19_{args.n_encoder}l"
+
+
 	if not os.path.exists(args.output_path):
 		os.mkdir(args.output_path)
 
@@ -132,7 +146,6 @@ def finetune(args):
 	test_data_loader = DataLoader(test_dataset, batch_size=args.valid_batch, num_workers=args.num_workers, pin_memory=True,  shuffle=False) if test_dataset is not None else None
 
 	# BERT train
-
 	print("Creating BERT Trainer")
 	trainer = MethylBertFinetuneTrainer(len(tokenizer), save_path=args.output_path+"bert.model/", 
 						  train_dataloader=train_data_loader, 
@@ -148,13 +161,10 @@ def finetune(args):
 						  decrease_steps=args.decrease_steps,
 						  save_freq=args.save_freq)
 
-	if args.pretrain:
-
-		trainer.load(args.pretrain)
-	else:
-		print("No pretrained model is given")
-		trainer.create_model(config_file="/omics/groups/OE0219/internal/Yunhee/DL_project/MethylBERT/model/3mers_pretrain/DNABERT_mouse_genome/bert.model/config.json")
-
+	# Load pre-trained model
+	trainer.load(args.pretrain)
+	
+	# Fine-tune
 	print("Training Start")
 	trainer.train(args.steps)
 
@@ -239,6 +249,20 @@ def run_deconvolute(args):
 	else:
 		pd.DataFrame.from_dict({"dmr_label":dmr_labels, "fi":fi}).sort_values("dmr_label").to_csv(args.output_path+"/FI.csv", sep="\t", header=True, index=False)
 
+def run_preprocess(args):
+	finetune_data_generate(f_dmr=args.f_dmr,
+			output_dir=args.output_dir,
+			f_ref=args.f_ref,
+			sc_dataset=args.sc_dataset,
+			input_file=args.input_file, 
+			n_mers=args.n_mers,
+			split_ratio=args.split_ratio,
+			n_dmrs=args.n_dmrs,
+			n_cores=args.n_cores,
+			seed=args.seed,
+			ignore_sex_chromo=args.ignore_sex_chromo
+		)
+
 def main(args=None):
 	print(f"MethylBERT v{__version__}")
 	options = ["preprocess_finetune", "finetune", "deconvolute"]
@@ -254,22 +278,11 @@ def main(args=None):
 	if selected_option == "preprocess_finetune":
 		preprocess_finetune_arg_parser(subparsers)
 		args = parser_init.parse_args()
-		finetune_data_generate(f_dmr=args.f_dmr,
-			output_dir=args.output_dir,
-			f_ref=args.f_ref,
-			sc_dataset=args.sc_dataset,
-			input_file=args.input_file, 
-			n_mers=args.n_mers,
-			split_ratio=args.split_ratio,
-			n_dmrs=args.n_dmrs,
-			n_cores=args.n_cores,
-			seed=args.seed,
-			ignore_sex_chromo=args.ignore_sex_chromo
-		)
+		run_preprocess(args)
 	elif selected_option == "finetune":
 		finetune_arg_parser(subparsers)
 		args = parser_init.parse_args()
-		finetune(args)
+		run_finetune(args)
 	elif selected_option == "deconvolute":
 		deconvolute_arg_parser(subparsers)
 		args = parser_init.parse_args()
