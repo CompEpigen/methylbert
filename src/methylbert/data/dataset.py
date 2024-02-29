@@ -90,8 +90,6 @@ class MethylBertPretrainDataset(MethylBertDataset):
 			self.lines = torch.squeeze(torch.tensor(np.array(line_labels, dtype=np.int16)))
 		del line_labels
 
-		self.set_dmr_labels = set([l["dmr_label"] for l in self.lines])
-
 	def __getitem__(self, index): 
 
 		dna_seq = self.lines[index].clone()
@@ -239,6 +237,8 @@ class MethylBertFinetuneDataset(MethylBertDataset):
 		with mp.Pool(n_cores) as pool:
 			self.lines = pool.map(partial(_line2tokens_finetune, tokenizer=self.vocab, max_len=self.seq_len, headers=headers), raw_seqs)
 			del raw_seqs
+		
+		self.set_dmr_labels = set([l["dmr_label"] for l in self.lines])
 
 		self.ctype_label_count = self._get_cls_num()
 		print("# of reads in each label: ", self.ctype_label_count)
@@ -254,7 +254,7 @@ class MethylBertFinetuneDataset(MethylBertDataset):
 		return label_count
 
 	def num_dmrs(self):
-		return max(len(set_dmr_labels), max(set_dmr_labels)+1) # +1 is for the label 0
+		return max(len(self.set_dmr_labels), max(self.set_dmr_labels)+1) # +1 is for the label 0
 	
 	def subset_data(self, n_seq):
 		self.lines = self.lines[:n_seq]

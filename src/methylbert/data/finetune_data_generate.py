@@ -70,7 +70,7 @@ def handling_cigar(ref_seq: str, xm_tag: str, cigar: str):
         cigar_num = cigar_list[cigar_idx*2]
         cigar_char = cigar_list[(cigar_idx*2)+1]
         
-        if cigar_char in ["I", "S"]: # insertion, soft clip
+        if cigar_char in ["I"]: # insertion, soft clip, "S"
             ref_seq = ref_seq[:cur_idx] + [cigar_char for i in range(cigar_num)] + ref_seq[cur_idx:]
         elif cigar_char in ["D" , "N"]: # deletion, skip
             xm_tag = xm_tag[:cur_idx] + [cigar_char for i in range(cigar_num)] + xm_tag[cur_idx:]
@@ -156,9 +156,11 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
                         if (xm_tag[idx] in ["D"]) or (xm_tag[idx+1] in ["D"]):
                             methyl_state="C"
                         else:
-                            raise ValueError("Error in the conversion: %s %s %s %s %s"%(xm_tag[idx],   
-                                             methyl_state, "Reverse" if reads.is_reverse else "Forward",
-                                             ref_seq, xm_tag))
+                            raise ValueError("Error in the conversion: %d %s %s %s %s\nrefe_seq %s\nread_seq %s\nxmtg_seq %s\n%s\n%s %s %d"%(idx, xm_tag[idx],   
+                                                   methyl_state, 
+                                                   "Reverse" if reads.is_reverse else "Forward",
+                                                   "Single" if is_single_end else "Paired",
+                                             ref_seq, reads.query_alignment_sequence, xm_tag, cigarstring, reads.query_name, chromo, reads.pos))
                     
                     ref_seq = ref_seq[:idx] + methyl_state + ref_seq[idx+1:]
 
