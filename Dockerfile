@@ -7,5 +7,5 @@ RUN micromamba clean --all --yes
 
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
 
-RUN pip install methylbert==0.0.2rc0
+RUN pip install methylbert
 RUN pip install urllib3==1.26.6
