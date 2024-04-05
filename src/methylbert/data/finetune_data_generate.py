@@ -1,3 +1,4 @@
+from .bam import process_bismark_read, process_dorado_read
 import argparse, os, uuid, sys
 
 import multiprocessing as mp
@@ -6,7 +7,6 @@ import pandas as pd
 import numpy as np
 
 from functools import partial
-
 from Bio import SeqIO
 
 import pickle, pysam, os, glob, random, re, time
@@ -20,17 +20,22 @@ def globalize(func):
   setattr(sys.modules[result.__module__], result.__name__, result)
   return result
 
-def kmers(seq, k=3):
+def kmers(seq: str, k: int=3):
     '''
-        Covert the sequencing including both reference DNA and methylation patterns into 3-mer DNA and methylation seqs
+        Covert sequences including both reference DNA and methylation patterns into 3-mer DNA and methylation seqs
     '''
     converted_seq = list()
     methyl = list()
+
+    if k % 2 == 0:
+        raise ValueError(f"k must be an odd number because of CpG methylation being at the middle of the token. The given k is {k}")
+
+    mid = int(k/2)
     for seq_idx in range(len(seq)-k):
         token = seq[seq_idx:seq_idx+k]
-        if token[1] =='z':
+        if token[mid] =='z':
             m = 0
-        elif token[1] =='Z':
+        elif token[mid] =='Z':
             m = 1
         else:
             m = 2
@@ -43,42 +48,7 @@ def kmers(seq, k=3):
     return converted_seq, methyl
 
 
-def parse_cigar(cigar):
-    num = 0
-    cigar_list = list()
-    cigar = list(cigar)
-    for c in cigar:
-        if c.isdigit() : 
-            num = num*10 + int(c)
-        else:
-            cigar_list += [num, c]
-            num = 0
-    return cigar_list
-
-def handling_cigar(ref_seq: str, xm_tag: str, cigar: str):
-    '''
-        Handle insertion and deletion on the reference sequence and the methylation patterns 
-        based on cigar string
-    '''
-    cigar_list = parse_cigar(cigar)
-    cur_idx = 0
-    
-    ref_seq = list(ref_seq)
-    xm_tag = list(xm_tag)
-    
-    for cigar_idx in range(int(len(cigar_list)/2)): # CIGAR string has a format of 'an alphabet + a number'
-        cigar_num = cigar_list[cigar_idx*2]
-        cigar_char = cigar_list[(cigar_idx*2)+1]
-        
-        if cigar_char in ["I"]: # insertion, soft clip, "S"
-            ref_seq = ref_seq[:cur_idx] + [cigar_char for i in range(cigar_num)] + ref_seq[cur_idx:]
-        elif cigar_char in ["D" , "N"]: # deletion, skip
-            xm_tag = xm_tag[:cur_idx] + [cigar_char for i in range(cigar_num)] + xm_tag[cur_idx:]
-        cur_idx += cigar_num
-        
-    return "".join(ref_seq), "".join(xm_tag)
-
-def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame, ncores=1):
+def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame, ncores: int=1, methyl_caller: str = "bismark"):
     '''
         Extract reads including methylation patterns overlapping with DMRs
         and convert those into 3-mer sequences
@@ -95,81 +65,37 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
             Number of cores to be used for parallel processing, default: 1
     '''
     
-    def _reads_overlapping(aln, chromo, start, end):
+    def _reads_overlapping(aln, chromo, start, end, methyl_caller="bismark"):
+        '''
         seq_list = list()
         dna_seq = list()
         xm_tags = list()
+        '''
+
+        if methyl_caller not in ["bismark", "dorado"]:
+            raise ValueError(f"Methylation caller must be one of [bismark, dorado]")
 
         # get all reads overlapping with chromo:start-end
         fetched_reads = aln.fetch(chromo, start, end, until_eof=True)
         processed_reads = list()
 
-        for reads in fetched_reads:
+        for read in fetched_reads:
             # Only select fully overlapping reads
-            if (reads.pos  < start) or ((reads.pos+reads.query_alignment_length) > end):
-                continue
-                
-            ref_seq = dict_ref[chromo][reads.pos:(reads.pos+reads.query_alignment_length)].upper() # Remove case-specific mode occured by the quality
-            xm_tag = reads.get_tag("XM")
-            cigarstring = reads.cigarstring
-            
-            # No CpG methylation on the read
-            if xm_tag.count(".") == len(xm_tag):
+            if (read.pos  < start) or ((read.pos+read.query_alignment_length) > end):
                 continue
             
-            # Handle the insertion and deletion 
-            ref_seq, xm_tag = handling_cigar(ref_seq, xm_tag, cigarstring)
+            # Remove case-specific mode occured by the quality
+            ref_seq = dict_ref[chromo][read.pos:(read.pos+read.query_alignment_length)].upper() 
             
-            # Extract all CpGs
-            methylatable_sites = [idx for idx, r in enumerate(ref_seq) if ref_seq[idx:idx+2] == "CG"]
+            if methyl_caller == "bismark":
+                ref_seq = process_bismark_read(ref_seq, read)
+            elif methyl_caller == "dorado":
+                ref_seq = process_dorado_read(ref_seq, read)
 
-            # if there's no CpGs on the read
-            if len(methylatable_sites) == 0:
-                continue 
-
-            # Paired-end or single-end
-            is_single_end = not bool(reads.flag % 2)
-
-            for idx in methylatable_sites:
-                methyl_state = None
-                methyl_idx = -1
-
-                # Taking the complement cytosine's methylation for the reversed reads
-                if idx >= len(xm_tag):
-                    methyl_state = "."
-                    methyl_idx=idx
-                elif (not reads.is_reverse and is_single_end) or (reads.is_reverse != reads.is_read1 and not is_single_end):
-                    methyl_state = xm_tag[idx]
-                    methyl_idx = idx 
-                elif idx+1 < len(xm_tag): 
-                    methyl_state = xm_tag[idx+1]
-                    methyl_idx = idx+1
-                else:
-                    methyl_state = "."
-                    methyl_idx = idx+1
-                
-                if methyl_state is not None:
-                    if methyl_state in (".", "D"): # Missing or occured by deletion
-                        methyl_state = "C"
-                        
-                    elif (methyl_state in ["x", "h", "X", "H"]): # non-CpG methyl
-                        if (xm_tag[idx] in ["D"]) or (xm_tag[idx+1] in ["D"]):
-                            methyl_state="C"
-                        else:
-                            raise ValueError("Error in the conversion: %d %s %s %s %s\nrefe_seq %s\nread_seq %s\nxmtg_seq %s\n%s\n%s %s %d"%(idx, xm_tag[idx],   
-                                                   methyl_state, 
-                                                   "Reverse" if reads.is_reverse else "Forward",
-                                                   "Single" if is_single_end else "Paired",
-                                             ref_seq, reads.query_alignment_sequence, xm_tag, cigarstring, reads.query_name, chromo, reads.pos))
-                    
-                    ref_seq = ref_seq[:idx] + methyl_state + ref_seq[idx+1:]
-
-            # Remove inserted and soft clip bases 
-            ref_seq = ref_seq.replace("I", "")
-            ref_seq = ref_seq.replace("S", "")
+            if ref_seq is None:
+                continue
 
             # When there is no CpG methylation patterns after processing
-
             if "z" not in ref_seq.lower():
                 continue
 
@@ -180,14 +106,15 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
                 raise ValueError("DNA and methylation sequences have different length (%d and %d)"%(len(s), len(m)))
 
             # Add processed results as a tag
-            reads.setTag("RF", value=" ".join(s), replace=True)
-            reads.setTag("ME", value="".join(m), replace=True)
+            read.setTag("RF", value=" ".join(s), replace=True) # reference sequence
+            read.setTag("ME", value="".join(m), replace=True) # methylation pattern sequence 
 
             # Process back to a dictionary
-            read_tags = {t:v for t, v in reads.get_tags()}
-            reads = reads.to_dict()
-            reads.update(read_tags)
-            processed_reads.append(reads)
+            read_tags = {t:v for t, v in read.get_tags()}
+            read = read.to_dict()
+            read.update(read_tags)
+            processed_reads.append(read)
+
         processed_reads = pd.DataFrame(processed_reads)
         if "tags" in processed_reads.keys():
             processed_reads = processed_reads.drop(columns=["tags"])
@@ -195,13 +122,15 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         return processed_reads
         
     @globalize
-    def _get_methylseq(dmr, bam_file_path: str, k: int):
+    def _get_methylseq(dmr, bam_file_path: str, k: int, methyl_caller: str):
         '''
             Return a dictionary of DNA seq, cell type and methylation seq processed in a 3-mer seq
         '''
         aln = pysam.AlignmentFile(bam_file_path, "rb")
 
-        processed_reads = _reads_overlapping(aln, dmr["chr"], int(dmr["start"]), int(dmr["end"]))
+        processed_reads = _reads_overlapping(aln, 
+                                             dmr["chr"], int(dmr["start"]), int(dmr["end"]),
+                                             methyl_caller)
         if processed_reads.shape[0] > 0:
             processed_reads = processed_reads.assign(dmr_ctype = dmr["ctype"],
                                                      dmr_label = dmr["dmr_id"])
@@ -211,10 +140,10 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         with mp.Pool(ncores) as pool:
             # Convert read sequences to k-mer sequences 
             seqs = pool.map(partial(_get_methylseq, 
-                                    bam_file_path = bam_file_path, k=k),
+                                    bam_file_path = bam_file_path, k=k, methyl_caller=methyl_caller),
                             dmrs.to_dict("records"))
     else:
-        seqs = [_get_methylseq(dmr, bam_file_path = bam_file_path, k=k) for dmr in dmrs.to_dict("records")]
+        seqs = [_get_methylseq(dmr, bam_file_path = bam_file_path, k=k, methyl_caller = methyl_caller) for dmr in dmrs.to_dict("records")]
         
     # Filter None values that means no overlapping read with the given DMR
     seqs = list(filter(lambda i: i is not None, seqs))
@@ -234,7 +163,8 @@ def finetune_data_generate(
         n_dmrs: int = -1,
         n_cores: int = 1,
         seed: int = 950410,
-        ignore_sex_chromo: bool = True
+        ignore_sex_chromo: bool = True,
+        methyl_caller: str = "bismark"
     ):
 
     # Setup random seed 
@@ -321,7 +251,7 @@ def finetune_data_generate(
 
         
 
-        extracted_reads = read_extract(f_sc_bam, dict_ref, k=3, dmrs=dmrs, ncores=n_cores)
+        extracted_reads = read_extract(f_sc_bam, dict_ref, k=3, dmrs=dmrs, ncores=n_cores, methyl_caller=methyl_caller)
         if extracted_reads is None:
             continue
 
