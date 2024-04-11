@@ -86,6 +86,22 @@ def test_single_bam_file(bam_file: str, f_dmr: str, f_ref: str, out_dir = "tmp/"
 
 	print("test_single_bam_file passed!")
 
+def test_dorado_aligned_file(bam_file: str, f_dmr: str, f_ref: str, out_dir = "tmp/"):
+	fdg.finetune_data_generate(
+		input_file = bam_file,
+		f_dmr = f_dmr,
+		f_ref = f_ref,
+		output_dir=out_dir,
+		split_ratio = 1.0,
+		n_cores=1, 
+		methyl_caller="dorado"
+	)
+
+	assert os.path.exists(out_dir+"data.csv")
+	assert os.path.exists(out_dir+"dmrs.csv")
+
+	print("test_dorado_aligned_file passed!")
+
 if __name__=="__main__":
 	f_bam = "data/T_sample.bam"
 	f_bam_list = "data/bam_list.txt"
@@ -97,4 +113,8 @@ if __name__=="__main__":
 	test_dmr_subset(bam_file = f_bam, f_dmr=f_dmr, f_ref=f_ref, n_dmrs=10)
 	test_multi_cores(bam_file = f_bam, f_dmr=f_dmr, f_ref=f_ref, n_cores=4)
 	test_split_ratio(bam_file = f_bam, f_dmr=f_dmr, f_ref=f_ref, split_ratio=0.7)
+
+	f_dorado = "data/dorado_aligned.bam"
+	f_ref_hg38="data/hg38_genome.fa"
+	test_dorado_aligned_file(bam_file = f_dorado, f_dmr=f_dmr, f_ref=f_ref_hg38)
 	print("Everything passed!")
