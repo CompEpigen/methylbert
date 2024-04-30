@@ -13,38 +13,6 @@ def parse_cigar(cigar: str):
 			num = 0
 	return cigar_char, cigar_num
 
-'''
-def parse_cigar(cigar: str):
-	num = 0
-	cigar_list = list()
-	cigar = list(cigar)
-	for c in cigar:
-		if c.isdigit() : 
-			num = num*10 + int(c)
-		else:
-			cigar_list += [num, c]
-			num = 0
-	return cigar_list
-'''
-'''
-def handling_cigar(ref_seq: str, xm_tag: str, cigar: str):
-		Handle insertion and deletion on the reference sequence and the methylation patterns 
-		based on cigar string
-	cigar_char, cigar_num = parse_cigar(cigar)
-	cur_idx = 0
-	
-	ref_seq = list(ref_seq)
-	xm_tag = list(xm_tag)
-	
-	for c, n in zip(cigar_char, cigar_num): # CIGAR string has a format of 'an alphabet + a number'
-		if c in ["I"]: # insertion, soft clip, "S"
-			ref_seq = ref_seq[:cur_idx] + [c for i in range(n)] + ref_seq[cur_idx:]
-		elif c in ["D" , "N"]: # deletion, skip
-			xm_tag = xm_tag[:cur_idx] + [c for i in range(n)] + xm_tag[cur_idx:]
-		cur_idx += n
-		
-	return "".join(ref_seq), "".join(xm_tag)
-'''
 def handling_cigar(methyl_seq: str, cigarstring: str):
 	# Handle cigar strings
 	cigar_list, num_list = parse_cigar(cigarstring)
@@ -110,11 +78,19 @@ def process_bismark_read(ref_seq, read):
 				if (xm_tag[idx] in ["D"]) or (xm_tag[idx+1] in ["D"]):
 					methyl_state="C"
 				else:
-					raise ValueError("Error in the conversion: %d %s %s %s %s\nrefe_seq %s\nread_seq %s\nxmtag_seq %s\n%s\n%s %s %d"%(idx, xm_tag[idx],   
+					raise ValueError("Error in the conversion: %d %s %s %s %s\nrefe_seq %s\nread_seq %s\nxmtag_seq %s\n%s\n%s %s %d"%(
+										   idx, 
+										   xm_tag[idx],   
 										   methyl_state, 
 										   "Reverse" if read.is_reverse else "Forward",
 										   "Single" if is_single_end else "Paired",
-									 ref_seq, read.query_alignment_sequence, xm_tag, cigarstring, read.query_name, chromo, read.pos))
+									 		ref_seq, 
+									 		read.query_alignment_sequence, 
+									 		xm_tag, 
+									 		cigarstring, 
+									 		read.query_name, 
+									 		read.reference_name, 
+									 		read.pos))
 			
 			ref_seq = ref_seq[:idx] + methyl_state + ref_seq[idx+1:]
 
