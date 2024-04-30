@@ -210,10 +210,11 @@ def run_deconvolute(args):
 
 	# Save the classification results 
 	total_res.to_csv(args.output_path+"/res.csv", sep="\t", header=True, index=False)
-	total_res["n_cpg"]=[sum(np.array([int(mm) for mm in m])<2) for m in total_res["methyl_seq"]]
 	if args.save_logit:
 		with open(args.output_path+"/test_classification_logit.pk", "wb") as fp:
 			pk.dump(logits, fp)
+
+	total_res["n_cpg"]=[sum(np.array([int(mm) for mm in m])<2) for m in total_res["methyl_seq"]]
 	
 	# Calculate margins
 	df_train = pd.read_csv(params["train_dataset"], sep="\t")
@@ -236,18 +237,24 @@ def run_deconvolute(args):
 	total_res  = total_res[total_res["n_cpg"]>0]
 	
 	if args.adjustment:
-		tumour_pred_ratio, fi, dmr_labels = grid_search_regions(logits=logits, margins=margins, n_grid=10000,regions=total_res["dmr_label"])
+		tumour_pred_ratio, fi, dmr_labels, likelihood, region_pruity, weights =\
+			grid_search_regions(logits=logits, margins=margins, n_grid=10000,regions=total_res["dmr_label"])
 	else:
-		tumour_pred_ratio, fi = grid_search(logits=logits, margins=margins, n_grid=10000)
+		tumour_pred_ratio, fi, likelihood = grid_search(logits=logits, margins=margins, n_grid=10000)
 	
 	print("Deconvolution result: ", tumour_pred_ratio)
 	pd.DataFrame.from_dict({"cell_type":["T", "N"],
 							"pred":tumour_pred_ratio}).to_csv(args.output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
 	if type(fi) is not list:
 		fi = [fi]
-		pd.DataFrame.from_dict({"fi":fi}).to_csv(args.output_path+"/FI.csv", sep="\t", header=True, index=False)
+		pd.DataFrame.from_dict({"fi":fi, 
+							    "likelihood": likelihood}).to_csv(args.output_path+"/FI.csv", sep="\t", header=True, index=False)
 	else:
-		pd.DataFrame.from_dict({"dmr_label":dmr_labels, "fi":fi}).sort_values("dmr_label").to_csv(args.output_path+"/FI.csv", sep="\t", header=True, index=False)
+		pd.DataFrame.from_dict({"dmr_label":dmr_labels, 
+								"fi":fi, 
+								"likelihood": likelihood, 
+								"estimated_purity": region_pruity,
+								"weights": weights}).sort_values("dmr_label").to_csv(args.output_path+"/FI.csv", sep="\t", header=True, index=False)
 
 def run_preprocess(args):
 	finetune_data_generate(f_dmr=args.f_dmr,

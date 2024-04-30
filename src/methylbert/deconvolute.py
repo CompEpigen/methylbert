@@ -38,7 +38,9 @@ def grid_search(logits, margins, n_grid, verbose=True):
 		pbar = tqdm(total=n_grid)
 	for m_theta in range(0, n_grid):
 		theta = m_theta*(1/n_grid)
-		prob = np.log(theta*(logits[:,1]/margins[1]) + (1-theta)*(logits[:,0]/margins[0])).tolist()
+		prob = theta*(logits[:,1]/margins[1]) + (1-theta)*(logits[:,0]/margins[0])
+		prob *= 1/logits.shape[0]
+		prob = np.log10(prob).tolist()
 		grid[0, m_theta] = np.sum(prob)
 		if verbose:
 			pbar.update(1)
@@ -46,9 +48,10 @@ def grid_search(logits, margins, n_grid, verbose=True):
 		pbar.close()
 
 	# Fisher info calculation
-	fi = np.var([np.abs(grid[0, f+1] -  grid[0, f]) * n_grid for f in range(n_grid-1)])
-	estimates =  float(np.argmax(grid, axis=1))*(1/n_grid)
-	return [estimates, 1-estimates], fi
+	fi = np.var([grid[0, f+1] -  grid[0, f] * n_grid for f in range(n_grid-1)])
+	argmax_idx = np.argmax(grid, axis=1)
+	estimates =  float(argmax_idx)*(1/n_grid)
+	return [estimates, 1-estimates], fi, grid[0, argmax_idx]
 
 
 def grid_search_regions(logits, margins, n_grid, regions):
@@ -60,16 +63,19 @@ def grid_search_regions(logits, margins, n_grid, regions):
 
 	dmr_labels = regions["region"].unique()
 	region_purity = np.zeros(len(dmr_labels))
-	fi = np.zeros(len(dmr_labels))
+	fi, likelihood = np.zeros(len(dmr_labels)), np.zeros(len(dmr_labels))
 	for idx, dmr_label in enumerate(dmr_labels):
 		dmr_logits = regions[regions["region"] == dmr_label]
-		region_purity[idx], fi[idx] = grid_search(np.array(dmr_logits.loc[:, ["logit1", "logit2"]]), margins, n_grid, verbose=False)[0]
+		purities, fi[idx], likelihood[idx] = grid_search(np.array(dmr_logits.loc[:, ["logit1", "logit2"]]), margins, n_grid, verbose=False)
+		region_purity[idx] = purities[0]
 
 	# EM algorithm for the adjustment
 	weights = np.ones(len(dmr_labels))
 	prev_mean = np.inf
+	estimates = np.mean(np.multiply(region_purity,weights))
+
 	for iterration in tqdm(range(10)):
-		estimates = np.mean(np.multiply(region_purity,weights))
+		prev_mean = estimates
  
 		def skewness_test(x):
 			a = np.multiply(np.array(region_purity), x)
@@ -82,11 +88,14 @@ def grid_search_regions(logits, margins, n_grid, regions):
 
 		x = minimize(skewness_test, weights) 
 		weights = x["x"]
+		estimates = np.mean(np.multiply(region_purity,weights))
+
 		if abs(estimates - prev_mean) < 0.0001:
 			break
-		prev_mean = estimates
+	
+	estimates = np.clip(estimates, 0, 1)
 
-	return [estimates, 1-estimates], list(fi), dmr_labels
+	return [estimates, 1-estimates], list(fi), dmr_labels, list(likelihood), list(region_purity), list(weights)
 
 def deconvolute(trainer : MethylBertFinetuneTrainer, 
 				data_loader : DataLoader, 
@@ -138,19 +147,22 @@ def deconvolute(trainer : MethylBertFinetuneTrainer,
 	assert total_res.shape[0] != 0, "There are no reads selected for deconvolution. It may mean all of the reads do not have CpG methylation."
 	
 	if adjustment:
-		estimation, fi, dmr_labels = grid_search_regions(total_res.loc[:,["P_N", "P_T"]].to_numpy(), 
+		estimation, fi, dmr_labels, likelihood = grid_search_regions(total_res.loc[:,["P_N", "P_T"]].to_numpy(), 
 											 margins, n_grid, total_res["dmr_label"])
 	else:
-		estimation, fi = grid_search(logits, margins, n_grid)
+		estimation, fi, likelihood = grid_search(logits, margins, n_grid)
 
 	# Save the results 
 	res = pd.DataFrame.from_dict({"cell_type":["T", "N"],
 							"pred":estimation}).to_csv(output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
 	if type(fi) is not list:
 		fi = [fi]
-		pd.DataFrame.from_dict({"fi":fi}).to_csv(output_path+"/FI.csv", sep="\t", header=True, index=False)
+		pd.DataFrame.from_dict({"fi":fi,
+							    "likelihood": likelihood}).to_csv(output_path+"/FI.csv", sep="\t", header=True, index=False)
 	else:
-		pd.DataFrame.from_dict({"dmr_label":dmr_labels, "fi":fi}).sort_values("dmr_label").to_csv(output_path+"/FI.csv", sep="\t", header=True, index=False)
+		pd.DataFrame.from_dict({"dmr_label":dmr_labels, 
+								"fi":fi,
+								"likelihood": likelihood}).sort_values("dmr_label").to_csv(output_path+"/FI.csv", sep="\t", header=True, index=False)
 
 if __name__=="__main__":
 	args = arg_parser()
