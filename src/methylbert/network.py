@@ -7,7 +7,7 @@ import math, os
 from copy import deepcopy
 
 from transformers import BertPreTrainedModel, BertModel, BertForMaskedLM, BertConfig
-
+from methylbert.function import FocalLoss 
 
 METHYLBERT_PRETRAINED_MODEL_ARCHIVE_MAP = {
     "hanyangii/methylbert_hg19_12l": "https://huggingface.co/hanyangii/methylbert_hg19_12l/resolve/main/pytorch_model.bin",
@@ -26,15 +26,23 @@ METHYLBERT_PRETRAINED_CONFIG_ARCHIVE_MAP = {
 
 class MethylBERTConfig(BertConfig):
     pretrained_config_archive_map = METHYLBERT_PRETRAINED_CONFIG_ARCHIVE_MAP
+    loss="bce"
 
 class MethylBertEmbeddedDMR(BertPreTrainedModel):
     pretrained_model_archive_map = METHYLBERT_PRETRAINED_MODEL_ARCHIVE_MAP
     config_class = MethylBERTConfig
+    base_model_prefix = "methylbert"
 
-    def __init__(self, config, seq_len=150, loss="bce"):
+    def __init__(self, config, seq_len=150):
+        # from pretrained - calls the init
         super().__init__(config)
         self.num_labels = config.num_labels
 
+        if config.loss not in ["bce", "focal_bce", "downsample_bce"]:
+            raise ValueError(f"loss must be bce, focal_bce or downsample_bce. {config.loss} is given.")
+
+        self.loss = config.loss
+        self.classification_loss_fct = self._setup_loss(self.loss)
         self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.read_classifier = nn.Sequential(
@@ -52,6 +60,15 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
         )
 
         self.init_weights()
+
+    def _setup_loss(self, loss):
+        if loss == "bce":
+            print("Cross entropy loss assigned")
+            return nn.CrossEntropyLoss() # this function requires unnormalised logits
+        elif loss == "focal_bce":
+            print("Focal loss assigned")
+            return FocalLoss()
+
 
     def check_model_status(self):
         print("Bert model training mode : %s"%(self.bert.training))
@@ -94,12 +111,10 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
         sequence_output =  torch.cat((sequence_output, encoded_dmr.unsqueeze(-1)), axis=-1)
 
         ctype_logits = self.read_classifier(sequence_output.view(-1,(self.seq_len+1)*769))
-
-        classification_loss_fct = nn.CrossEntropyLoss() # this function requires unnormalised logits
-        binary_loss = classification_loss_fct(ctype_logits.view(-1, 2), 
+        
+        loss = self.classification_loss_fct(ctype_logits.view(-1, 2), 
         nn.functional.one_hot(ctype_label, num_classes=2).to(torch.float32).view(-1, 2))
         ctype_logits = ctype_logits.softmax(dim=1)
-        loss = binary_loss
 
         outputs = {"loss": loss,
                     "dmr_logits":sequence_output,

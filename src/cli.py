@@ -48,6 +48,7 @@ def finetune_arg_parser(subparsers):
 	parser.add_argument("--corpus_lines", type=int, default=None, help="total number of lines in corpus")
 	
 	# Hyperparams for training
+	parser.add_argument("--loss", type=str, default="bce", help="Loss function for fine-tuning (default: bce)")
 	parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Max gradient norm (default: 1.0)")
 	parser.add_argument(
 		"--gradient_accumulation_steps",
@@ -159,7 +160,8 @@ def run_finetune(args):
 						  max_grad_norm = args.max_grad_norm,
 						  warmup_step=args.warm_up,
 						  decrease_steps=args.decrease_steps,
-						  save_freq=args.save_freq)
+						  save_freq=args.save_freq, 
+						  loss=args.loss)
 
 	# Load pre-trained model
 	trainer.load(args.pretrain)

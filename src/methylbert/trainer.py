@@ -6,11 +6,11 @@ from torch.optim.lr_scheduler import LambdaLR
 from torch.cuda.amp import GradScaler
 
 from sklearn.metrics import roc_curve, auc, accuracy_score
-from collections import OrderedDict
 
 from methylbert.network import MethylBertEmbeddedDMR
 from methylbert.data.vocab import MethylVocab
 from methylbert.utils import get_dna_seq
+from methylbert.config import get_config
 from transformers import BertForSequenceClassification, BertConfig, BertForMaskedLM
 
 from tqdm import tqdm
@@ -46,44 +46,6 @@ def learning_rate_scheduler(optimizer, num_warmup_steps: int, num_training_steps
     return LambdaLR(optimizer, lr_lambda, last_epoch = -1)
 
 
-class Config(object):
-    def __init__(self, config_dict: dict):
-        for k, v in config_dict.items():
-            setattr(self, k, v)
-
-def get_config(**kwargs):
-    '''
-    Create a Config object for configuration from input
-    '''
-    config = OrderedDict(
-          [
-            ('lr', 1e-4),
-            ('beta', (0.9, 0.999)),
-            ('weight_decay', 0.01),
-            ('warmup_step', 10000),
-            ('eps', 1e-6),
-            ('with_cuda', True),
-            ('log_freq', 10),
-            ('eval_freq', 10),
-            ('n_hidden', None),
-            ("decrease_steps", 200),
-            ('eval', False),
-            ('amp', False),
-            #("methyl_learning", "cnn"),
-            ("gradient_accumulation_steps", 1), 
-            ("max_grad_norm", 1.0),
-            ("eval", False),
-            ("save_freq", None),
-            #("loss", "bce")
-          ]
-        )
-
-    if kwargs is not None:
-        for key in config.keys():
-            if key in kwargs.keys():
-                config[key] = kwargs.pop(key)
-
-    return Config(config)
 
 class MethylBertTrainer(object):
     def __init__(self, vocab_size: int, save_path: str = "", 
@@ -667,7 +629,8 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
             self.bert = MethylBertEmbeddedDMR.from_pretrained(dir_path, 
                 output_attentions=True, 
                 output_hidden_states=True, 
-                seq_len = self.train_data.dataset.seq_len
+                seq_len = self.train_data.dataset.seq_len,
+                loss=self._config.loss
                 )
             
             try:
@@ -686,7 +649,8 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                 num_labels=self.train_data.dataset.num_dmrs() if not n_dmrs else n_dmrs, 
                 output_attentions=True, 
                 output_hidden_states=True, 
-                seq_len = self.train_data.dataset.seq_len
+                seq_len = self.train_data.dataset.seq_len,
+                loss=self._config.loss
                 )
 
         self._setup_model()
