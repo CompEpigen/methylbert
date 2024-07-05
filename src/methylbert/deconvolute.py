@@ -30,6 +30,19 @@ def arg_parser():
 
 	return parser.parse_args()
 
+def likelihood_fun(theta, margins, prob):
+    '''
+    theta should be 2 x 1
+    prob should be reads x 2
+    '''
+    #margins, prob = args
+    prob = np.divide(prob, margins)
+    if prob.shape[1] != theta.shape[0]:
+        raise ValueError(f"Dimensions are wrong: theta {theta.shape}, prob {prob.shape}")
+    prob = np.log(np.matmul(theta.T, prob.T))
+    return  np.sum(prob)
+
+
 def grid_search(logits, margins, n_grid, verbose=True):
 	grid = np.zeros([1, n_grid])
 	
@@ -38,10 +51,8 @@ def grid_search(logits, margins, n_grid, verbose=True):
 		pbar = tqdm(total=n_grid)
 	for m_theta in range(0, n_grid):
 		theta = m_theta*(1/n_grid)
-		prob = theta*(logits[:,1]/margins[1]) + (1-theta)*(logits[:,0]/margins[0])
-		prob *= 1/logits.shape[0]
-		prob = np.log10(prob).tolist()
-		grid[0, m_theta] = np.sum(prob)
+		grid[0, m_theta] = likelihood_fun(np.array([1-theta, theta]).reshape([2,1]),
+							   margins, logits)
 		if verbose:
 			pbar.update(1)
 	if verbose:
@@ -55,6 +66,17 @@ def grid_search(logits, margins, n_grid, verbose=True):
 
 
 def grid_search_regions(logits, margins, n_grid, regions):
+
+	def skewness_test(x, *args):
+		region_purity, estimates = args
+		a = np.multiply(np.array(region_purity), x)
+		m2 = _moment(a, 2, axis=0, mean=estimates)
+		m3 = _moment(a, 3, axis=0, mean=estimates)
+		with np.errstate(all='ignore'):
+			zero = (m2 <= (np.finfo(m2.dtype).resolution * estimates)**2)
+			vals = np.where(zero, np.nan, m3 / m2**1.5)
+		return (vals[()])**2 
+
 	regions = pd.DataFrame({
 		"logit1" : logits[:, 0],
 		"logit2" : logits[:, 1],
@@ -76,17 +98,7 @@ def grid_search_regions(logits, margins, n_grid, regions):
 
 	for iterration in tqdm(range(10)):
 		prev_mean = estimates
- 
-		def skewness_test(x):
-			a = np.multiply(np.array(region_purity), x)
-			m2 = _moment(a, 2, axis=0, mean=estimates)
-			m3 = _moment(a, 3, axis=0, mean=estimates)
-			with np.errstate(all='ignore'):
-				zero = (m2 <= (np.finfo(m2.dtype).resolution * estimates)**2)
-				vals = np.where(zero, np.nan, m3 / m2**1.5)
-			return (vals[()])**2 
-
-		x = minimize(skewness_test, weights) 
+		x = minimize(skewness_test, weights, args=(region_purity, estimates)) 
 		weights = x["x"]
 		estimates = np.mean(np.multiply(region_purity,weights))
 
@@ -131,11 +143,11 @@ def deconvolute(trainer : MethylBertFinetuneTrainer,
 	total_res = total_res.drop(columns=["ctype_label"])
 
 	# Save the classification results 
-	total_res.to_csv(output_path+"/res.csv", sep="\t", header=True, index=False)
 	total_res["n_cpg"]=total_res["methyl_seq"].apply(lambda x: x.count("0") + x.count("1"))
+	total_res["P_ctype"] = logits[:,1]
+	total_res.to_csv(output_path+"/res.csv", sep="\t", header=True, index=False)
 	total_res["P_N"] = logits[:,0]
-	total_res["P_T"] = logits[:,1]
-
+	
 	# Tumour-normal deconvolution
 	# Margins from train data
 	margins = df_train.value_counts("ctype", normalize=True)[["N","T"]].tolist()
@@ -147,7 +159,7 @@ def deconvolute(trainer : MethylBertFinetuneTrainer,
 	assert total_res.shape[0] != 0, "There are no reads selected for deconvolution. It may mean all of the reads do not have CpG methylation."
 	
 	if adjustment:
-		estimation, fi, dmr_labels, likelihood = grid_search_regions(total_res.loc[:,["P_N", "P_T"]].to_numpy(), 
+		estimation, fi, dmr_labels, likelihood = grid_search_regions(total_res.loc[:,["P_N", "P_ctype"]].to_numpy(), 
 											 margins, n_grid, total_res["dmr_label"])
 	else:
 		estimation, fi, likelihood = grid_search(logits, margins, n_grid)
