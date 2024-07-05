@@ -86,7 +86,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
             
             # Remove case-specific mode occured by the quality
             ref_seq = dict_ref[chromo][read.pos:(read.pos+read.query_alignment_length)].upper() 
-            
+
             if methyl_caller == "bismark":
                 ref_seq = process_bismark_read(ref_seq, read)
             elif methyl_caller == "dorado":

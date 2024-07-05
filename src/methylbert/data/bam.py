@@ -1,3 +1,5 @@
+from typing import Tuple, List
+
 def parse_cigar(cigar: str):
 	num = 0
 	cigar_char = list()
@@ -129,15 +131,30 @@ def process_dorado_read(ref_seq, read):
 
 	# Get modified bases indicationg methylation 
 	methyl_seq = [2 for i in range(len(read_seq))]
+	modified_bases = read.modified_bases.copy() # the instance of read cannot be modified
+	ch_key, cm_key = ('C', int(read.is_reverse), 'h'), ('C', int(read.is_reverse), 'm')
 
-	if not compare_modifications(read.modified_bases['C', int(read.is_reverse), 'h'], 
-								 read.modified_bases['C', int(read.is_reverse), 'm']):
-		raise ValueError(f"Modifications are not aligned: {read.modified_bases['C', int(read.is_reverse), 'h']}, {read.modified_bases['C', int(read.is_reverse), 'm']}")
+	if (ch_key not in modified_bases.keys()) and (cm_key not in modified_bases.keys()):
+		# no cytosine modification
+		return None
+	elif cm_key not in modified_bases.keys():
+		#  5-Methylcytosine  missing, add Cm keys with likelihood 0 
+		modified_bases.update({cm_key: list()})
+		for base_mod in modified_bases[ch_key]:
+			modified_bases[cm_key].append((base_mod[0], 0))
+	elif ch_key not in modified_bases.keys():
+		#  add Ch keys with likelihood 0 
+		modified_bases.update({ch_key: list()})
+		for base_mod in modified_bases[cm_key]:
+			modified_bases[ch_key].append((base_mod[0], 0))
+	elif not compare_modifications(modified_bases['C', int(read.is_reverse), 'h'], 
+								 modified_bases['C', int(read.is_reverse), 'm']):
+		raise ValueError(f"Modifications are not aligned: {modified_bases['C', int(read.is_reverse), 'h']}, {modified_bases['C', int(read.is_reverse), 'm']}")
 
-	for ch, cm in zip(read.modified_bases['C', int(read.is_reverse), 'h'], 
-					  read.modified_bases['C', int(read.is_reverse), 'm']):
+	for ch, cm in zip(modified_bases[ch_key], 
+					  modified_bases[cm_key]):
 		sum_prob = ch[1]+cm[1]
-		methyl_pattern = 1 if sum_prob >= 178 else 0
+		methyl_pattern = 1 if sum_prob >= 178 else 0 # consider methylated when the likelihood is > .5
 		cg_idx = ch[0] - 1 if read.is_reverse else ch[0]
 		methyl_seq[cg_idx] = methyl_pattern
 
