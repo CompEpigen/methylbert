@@ -1,5 +1,5 @@
 from torch.utils.data import Dataset
-import torch
+import torch, gc
 
 import numpy as np
 from copy import deepcopy
@@ -89,6 +89,7 @@ class MethylBertPretrainDataset(MethylBertDataset):
 			print("Lines are processed")
 			self.lines = torch.squeeze(torch.tensor(np.array(line_labels, dtype=np.int16)))
 		del line_labels
+		gc.collect()
 
 	def __getitem__(self, index): 
 
@@ -237,7 +238,7 @@ class MethylBertFinetuneDataset(MethylBertDataset):
 		with mp.Pool(n_cores) as pool:
 			self.lines = pool.map(partial(_line2tokens_finetune, tokenizer=self.vocab, max_len=self.seq_len, headers=headers), raw_seqs)
 			del raw_seqs
-		
+		gc.collect()
 		self.set_dmr_labels = set([l["dmr_label"] for l in self.lines])
 
 		self.ctype_label_count = self._get_cls_num()
