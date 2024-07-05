@@ -84,6 +84,7 @@ def preprocess_finetune_arg_parser(subparsers):
 	parser.add_argument("-r", "--f_ref", required=True, type=str, help=".fasta file containing reference genome")
 
 	parser.add_argument("-nm", "--n_mers", type=int, default=3, help="K for K-mer sequences (default: 3)")
+	parser.add_argument("-m", "--methylcaller", type=str, default="bismark", help="Used methylation caller. It must be either bismark or dorado (default: bismark)")
 	parser.add_argument("-p", "--split_ratio", type=float, default=0.8, help="the ratio between train and test dataset (default: 0.8)")
 	parser.add_argument("-nd", "--n_dmrs", type=int, default=-1, help="Number of DMRs to take from the dmr file. If the value is not given, all DMRs will be used")
 	parser.add_argument("-c", "--n_cores", type=int, default=1, help="number of cores for the multiprocessing (default: 1)")
@@ -211,6 +212,7 @@ def run_deconvolute(args):
 	print(total_res, logits)
 
 	# Save the classification results 
+	total_res["P_ctype"] = logits[:,1]
 	total_res.to_csv(args.output_path+"/res.csv", sep="\t", header=True, index=False)
 	if args.save_logit:
 		with open(args.output_path+"/test_classification_logit.pk", "wb") as fp:
@@ -269,7 +271,8 @@ def run_preprocess(args):
 			n_dmrs=args.n_dmrs,
 			n_cores=args.n_cores,
 			seed=args.seed,
-			ignore_sex_chromo=args.ignore_sex_chromo
+			ignore_sex_chromo=args.ignore_sex_chromo,
+			methyl_caller=args.methylcaller
 		)
 
 def main(args=None):
