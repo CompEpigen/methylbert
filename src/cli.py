@@ -1,4 +1,4 @@
-import argparse, sys, os 
+import argparse, sys, os, json
 
 import pickle as pk
 import pandas as pd
@@ -285,6 +285,10 @@ def run_preprocess(args):
 			methyl_caller=args.methylcaller
 		)
 
+def write_args2json(args, f_out):
+	with open(f_out, "w") as fp:
+		json.dump(vars(args), fp)
+
 def main(args=None):
 	print(f"MethylBERT v{__version__}")
 	options = ["preprocess_finetune", "finetune", "deconvolute"]
@@ -296,18 +300,31 @@ def main(args=None):
 	parser_init = argparse.ArgumentParser("methylbert")
 	subparsers = parser_init.add_subparsers(help="Options for MethylBERT")
 	selected_option =  sys.argv[1]
-	
+
+	# Configuration file is given
+	if ".json" in sys.argv[2]:
+		f_config = sys.argv[2]
+		with open(f_config, "r") as fp:
+			config_dict = json.load(fp)
+		args = argparse.Namespace(**config_dict)
+
 	if selected_option == "preprocess_finetune":
-		preprocess_finetune_arg_parser(subparsers)
-		args = parser_init.parse_args()
+		if args is None:
+			preprocess_finetune_arg_parser(subparsers)
+			args = parser_init.parse_args()
+			write_args2json(args, os.path.join(args.output_dir, "preprocess_finetune_config.json"))
 		run_preprocess(args)
 	elif selected_option == "finetune":
-		finetune_arg_parser(subparsers)
-		args = parser_init.parse_args()
+		if args is None:		
+			finetune_arg_parser(subparsers)
+			args = parser_init.parse_args()
+			write_args2json(args, os.path.join(args.output_path, "finetune_config.json"))
 		run_finetune(args)
 	elif selected_option == "deconvolute":
-		deconvolute_arg_parser(subparsers)
-		args = parser_init.parse_args()
+		if args is None:		
+			deconvolute_arg_parser(subparsers)
+			args = parser_init.parse_args()
+			write_args2json(args, os.path.join(args.output_path, "deconvolute_config.json"))
 		run_deconvolute(args)
 	else:
 		print(f"The option must be chosen in {options}")
