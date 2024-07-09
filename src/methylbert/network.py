@@ -119,7 +119,7 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
         outputs = {"loss": loss,
                     "dmr_logits":sequence_output,
                    "classification_logits": ctype_logits}
-
+        
         return outputs  # (loss), logits, (hidden_states), (attentions)
 
 

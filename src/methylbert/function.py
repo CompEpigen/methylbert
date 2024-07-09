@@ -5,7 +5,7 @@ from torch.nn.modules.loss import _Loss
 def sigmoid_focal_loss(
     inputs: torch.Tensor,
     targets: torch.Tensor,
-    alpha: float = 0.25,
+    alpha: float = 0.1,
     gamma: float = 2,
     reduction: str = "none",
 ) -> torch.Tensor:
