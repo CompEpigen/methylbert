@@ -143,7 +143,7 @@ def process_dorado_read(ref_seq, read):
 		for base_mod in modified_bases[ch_key]:
 			modified_bases[cm_key].append((base_mod[0], 0))
 	elif ch_key not in modified_bases.keys():
-		#  add Ch keys with likelihood 0 
+		# 5-Hydroxymethylcytosine missing, add Ch keys with likelihood 0 
 		modified_bases.update({ch_key: list()})
 		for base_mod in modified_bases[cm_key]:
 			modified_bases[ch_key].append((base_mod[0], 0))
