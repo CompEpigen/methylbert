@@ -9,7 +9,7 @@ from methylbert.trainer import MethylBertFinetuneTrainer
 from methylbert.data.vocab import MethylVocab
 from methylbert.data.dataset import MethylBertFinetuneDataset
 from methylbert.utils import set_seed
-from methylbert.deconvolute import grid_search, grid_search_regions
+from methylbert.deconvolute import grid_search, grid_search_regions, deconvolute
 from methylbert import __version__
 
 import torch
@@ -204,7 +204,18 @@ def run_deconvolute(args):
 										)
 	trainer.load(restore_dir, load_fine_tune=True)
 	print("Trained model (%s) is restored"%restore_dir)
+	# Calculate margins
+	df_train = pd.read_csv(params["train_dataset"], sep="\t")
 
+	deconvolute(trainer = trainer, 
+			data_loader = data_loader, 
+			df_train = df_train, 
+			tokenizer = tokenizer,
+			output_path = args.output_path, 
+			n_grid = 10000, 
+			adjustment = args.adjustment)
+
+	'''
 	# Read classification
 	total_res, logits = trainer.read_classification(data_loader=data_loader,
 												tokenizer=tokenizer,
@@ -220,8 +231,7 @@ def run_deconvolute(args):
 
 	total_res["n_cpg"]=[sum(np.array([int(mm) for mm in m])<2) for m in total_res["methyl_seq"]]
 	
-	# Calculate margins
-	df_train = pd.read_csv(params["train_dataset"], sep="\t")
+	
 	
 	# Deconvolution
 	unique_ctypes = df_train["ctype"].unique()
@@ -229,7 +239,7 @@ def run_deconvolute(args):
 		total_res["ctype"] = ["N" if c == "noncancer" else "T" for c in total_res["ctype"]]
 
 	print("UNIQUE ", unique_ctypes)
-	
+
 	# Tumour-normal deconvolution
 	margins = df_train.value_counts("ctype", normalize=True)[["N","T"]].tolist()
 	print("Margins (normal, tumour) : ", margins)
@@ -259,7 +269,7 @@ def run_deconvolute(args):
 								"likelihood": likelihood, 
 								"estimated_purity": region_pruity,
 								"weights": weights}).sort_values("dmr_label").to_csv(args.output_path+"/FI.csv", sep="\t", header=True, index=False)
-
+	'''
 def run_preprocess(args):
 	finetune_data_generate(f_dmr=args.f_dmr,
 			output_dir=args.output_dir,

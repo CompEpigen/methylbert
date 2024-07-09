@@ -16,34 +16,36 @@ import pickle as pk
 
 from scipy.optimize import minimize
 
-def arg_parser():
-	parser = argparse.ArgumentParser()
-
-	parser.add_argument("-i", "--input_data", required=True, type=str, help="Bulk data to deconvolve")
-	parser.add_argument("-m", "--model_dir", required=True, type=str, help="Trained methylbert model")
-	parser.add_argument("-o", "--output_path", type=str, default="./res/", help="Directory to save deconvolution results. default: ./res/")
-
-	# Running parametesr
-	parser.add_argument("-b", "--batch_size", type=int, default=64, help="Batch size. Please increase the number if you do not have enough memory to run the software, default: 64")
-	parser.add_argument("--save_logit",  default=False, action="store_true", help="Save logits from the model")
-	parser.add_argument("--adjustment",  default=False, action="store_true", help="Adjust the estimated value")
-
-	return parser.parse_args()
-
 def likelihood_fun(theta, margins, prob):
-    '''
-    theta should be 2 x 1
-    prob should be reads x 2
-    '''
-    #margins, prob = args
-    prob = np.divide(prob, margins)
-    if prob.shape[1] != theta.shape[0]:
-        raise ValueError(f"Dimensions are wrong: theta {theta.shape}, prob {prob.shape}")
-    prob = np.log(np.matmul(theta.T, prob.T))
-    return  np.sum(prob)
+	'''
+	theta should be 2 x 1
+	prob should be reads x 2
+	'''
+	#margins, prob = args
+	prob = np.divide(prob, margins)
+	prob = np.log(np.matmul(theta.T, prob.T))
+	return  np.sum(prob)
 
+def nll_multi_celltype(thetas, *args):
+
+	df_res, margins = args
+	nll = 0
+
+	for idx, ctype in enumerate(margins.keys()):
+		ctype_margins = np.array([1-margins[ctype], margins[ctype]])
+		prob = df_res.loc[df_res["dmr_ctype"]==ctype, "P_ctype"].to_numpy()
+		prob = np.concatenate([np.array(1-prob).reshape(-1,1), 
+							   np.array(prob).reshape(-1, 1)], axis=1)
+		prob = np.divide(prob, ctype_margins)
+		prob = np.log(np.matmul(np.array([1-thetas[idx], thetas[idx]]).reshape([1,2]),
+								prob.T))
+		nll -= np.sum(prob)
+	return nll
 
 def grid_search(logits, margins, n_grid, verbose=True):
+	'''
+	return estimated_proportions (list), fisher info, likelihood
+	'''
 	grid = np.zeros([1, n_grid])
 	
 	if verbose:
@@ -51,8 +53,10 @@ def grid_search(logits, margins, n_grid, verbose=True):
 		pbar = tqdm(total=n_grid)
 	for m_theta in range(0, n_grid):
 		theta = m_theta*(1/n_grid)
-		grid[0, m_theta] = likelihood_fun(np.array([1-theta, theta]).reshape([2,1]),
-							   margins, logits)
+		theta = np.array([1-theta, theta]).reshape([2,1])
+		if logits.shape[1] != theta.shape[0]:
+			raise ValueError(f"Dimensions are wrong: theta {theta.shape}, prob {prob.shape}")
+		grid[0, m_theta] = likelihood_fun(theta, margins, logits)
 		if verbose:
 			pbar.update(1)
 	if verbose:
@@ -109,6 +113,53 @@ def grid_search_regions(logits, margins, n_grid, regions):
 
 	return [estimates, 1-estimates], list(fi), dmr_labels, list(likelihood), list(region_purity), list(weights)
 
+def optimise_nll_deconvolute(reads : pd.DataFrame,
+							 margins : pd.Series):
+	'''
+	Deconvolution for multiple cell types
+	'''
+
+	estimates = minimize(nll_multi_celltype, 
+							margins.to_numpy(),
+							args=(reads, margins), 
+							method='SLSQP',
+							bounds=[(1e-10, 1-1e-10) for i in range(margins.shape[0])],
+							constraints={'type': 'eq', 'fun': lambda x: np.sum(x)-1})
+	return pd.DataFrame.from_dict({"cell_type":margins.keys().tolist(), 
+								   "pred":estimates.x})
+
+def purity_estimation(reads : pd.DataFrame,
+					  margins : pd.Series, 
+					  n_grid : int,
+					  adjustment : bool):
+
+	margins = margins[["N","T"]].tolist()
+	
+	# Tumour-normal deconvolution
+	if adjustment:
+		# Adjustment applied
+		estimation, fi, dmr_labels, likelihood = \
+		grid_search_regions(reads.loc[:,["P_N", "P_ctype"]].to_numpy(), 
+							margins, 
+							n_grid, 
+							reads["dmr_label"])
+	else:
+		estimation, fi, likelihood = grid_search(reads.loc[:,["P_N", "P_ctype"]].to_numpy(),
+												 margins, 
+												 n_grid)
+
+	# Dataframe for the results 
+	deconv_res = pd.DataFrame.from_dict({"cell_type":["T", "N"], "pred":estimation})
+	if type(fi) is not list:
+		fi = [fi]
+		fi_res = pd.DataFrame.from_dict({"fi":fi, "likelihood": likelihood})
+	else:
+		fi_res = pd.DataFrame.from_dict({"dmr_label":dmr_labels, 
+										"fi":fi,
+										"likelihood": likelihood}).sort_values("dmr_label")
+
+	return deconv_res, fi_res
+
 def deconvolute(trainer : MethylBertFinetuneTrainer, 
 				data_loader : DataLoader, 
 				df_train : pd.DataFrame, 
@@ -148,139 +199,29 @@ def deconvolute(trainer : MethylBertFinetuneTrainer,
 	total_res.to_csv(output_path+"/res.csv", sep="\t", header=True, index=False)
 	total_res["P_N"] = logits[:,0]
 	
-	# Tumour-normal deconvolution
-	# Margins from train data
-	margins = df_train.value_counts("ctype", normalize=True)[["N","T"]].tolist()
+	# Select reads which contain methylation patterns 
+	total_res  = total_res[total_res["n_cpg"]>0]
+	assert total_res.shape[0] != 0, "There are no reads selected for deconvolution. It may mean all of the reads do not have CpG methylation."
+
+	# Calculate prior from training data 
+	margins = df_train.value_counts("ctype", normalize=True)
+
 	print("Margins : ", margins)
 	print(total_res.head())
 
-	total_res  = total_res[total_res["n_cpg"]>0]
-
-	assert total_res.shape[0] != 0, "There are no reads selected for deconvolution. It may mean all of the reads do not have CpG methylation."
-	
-	if adjustment:
-		estimation, fi, dmr_labels, likelihood = grid_search_regions(total_res.loc[:,["P_N", "P_ctype"]].to_numpy(), 
-											 margins, n_grid, total_res["dmr_label"])
+	if len(margins.keys()) == 2:
+		# purity estimation
+		deconv_res, fi_res = purity_estimation(reads = total_res,
+											   margins = margins, 
+											   n_grid = n_grid,
+											   adjustment = adjustment)
+		deconv_res.to_csv(output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
+		fi_res.to_csv(output_path+"/FI.csv", sep="\t", header=True, index=False)
+	elif len(margins.keys()) > 2:
+		# multiple cell-type deconvolution 
+		deconv_res = optimise_nll_deconvolute(reads = total_res, margins = margins)
+		deconv_res.to_csv(output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
 	else:
-		estimation, fi, likelihood = grid_search(logits, margins, n_grid)
-
-	# Save the results 
-	res = pd.DataFrame.from_dict({"cell_type":["T", "N"],
-							"pred":estimation}).to_csv(output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
-	if type(fi) is not list:
-		fi = [fi]
-		pd.DataFrame.from_dict({"fi":fi,
-							    "likelihood": likelihood}).to_csv(output_path+"/FI.csv", sep="\t", header=True, index=False)
-	else:
-		pd.DataFrame.from_dict({"dmr_label":dmr_labels, 
-								"fi":fi,
-								"likelihood": likelihood}).sort_values("dmr_label").to_csv(output_path+"/FI.csv", sep="\t", header=True, index=False)
-
-if __name__=="__main__":
-	args = arg_parser()
-	logging.basicConfig(format='%(asctime)s %(message)s', level=logging.DEBUG)
-
-	# Reload training parameters 
-	params = dict()
-	with open(args.model_dir+'train_param.txt', "r") as fp:
-		for li in fp.readlines():
-			li = li.strip().split('\t')
-			params[li[0]] = li[1]
-	logging.info("Restored parameters: %s", params)
-
-	# Create a result directory
-	if not os.path.exists(args.output_path):
-		os.mkdir(args.output_path)
-		logging.info("New directory %s is created", args.output_path)
-
-	if os.path.exists(args.output_path+"/test_classification_logit.pk"):
-		logging.info("Load saved logits  and results")
-		with open(args.output_path+"/test_classification_logit.pk", "rb") as fp:
-			logits = pk.load(fp)
-
-		total_res = pd.read_csv(args.output_path+"/res.csv", sep="\t")
-	else:
-		# Restore the model
-		tokenizer=MethylVocab(k=int(params["n_mers"]))
-		dataset = MethylBertFinetuneDataset(args.input_data, tokenizer, seq_len=int(params["seq_len"]))
-		data_loader = DataLoader(dataset, batch_size=args.batch_size, num_workers=40)
-		logging.info("Bulk data (%s) is loaded", args.input_data)
-
-		restore_dir = os.path.join(args.model_dir, "bert.model/")
-		trainer = MethylBertFinetuneTrainer(len(tokenizer), save_path='./test',
-											train_dataloader=data_loader, 
-											test_dataloader=data_loader,
-											methyl_learning=params["methyl_learning"] if "methyl_learning" in params.keys() else "cnn",
-											loss=params["loss"] if "loss" in params.keys() else "bce")
-		trainer.load(restore_dir, load_fine_tune=True)
-		logging.info("Trained model (%s) is restored", restore_dir)
-
-		# Read classification
-		total_res, logits = trainer.read_classification(data_loader=data_loader,
-													tokenizer=tokenizer,
-													logit=True)
-
-		# Save the classification results 
-		total_res.to_csv(args.output_path+"/res.csv", sep="\t", header=True, index=False)
-	total_res["n_cpg"]=[sum(np.array([int(mm) for mm in m])<2) for m in total_res["methyl_seq"]]
-
-	if args.save_logit:
-		with open(args.output_path+"/test_classification_logit.pk", "wb") as fp:
-			pk.dump(logits, fp)
-
-	# convert the output of methylbert into np.array
-	#logits = [l.detach().numpy() for l in logits]
-	#logits = np.concatenate(logits, axis=0) # merge
+		raise RuntimeError("There is only one cell type in the training data set. Neither purity estimation nor deconvolution can be performed.")
 
 	
-	# Calculate margins
-	df_train = pd.read_csv(params["train_dataset"], sep="\t")
-	df_train.columns = ['seqname', 'flag', 'ref_name', 'ref_pos', 'map_quality', 'cigar', 'next_ref_name', 'next_ref_pos', 'length', 'seq', 'qual', 'MD', 'PG', 'XG', 'NM', 'XM', 'XR', 'dna_seq', 'methyl_seq', 'dmr_ctype', 'dmr_label', 'ctype']
-
-	# Deconvolution
-	unique_ctypes = df_train["ctype"].unique()
-	if total_res["ctype"][0] not in ["N", "T"]:
-		total_res["ctype"] = ["N" if c == "noncancer" else "T" for c in total_res["ctype"]]
-
-	print("UNIQUE ", unique_ctypes)
-	if len(unique_ctypes) == 2:
-		# Tumour-normal deconvolution
-		margins = df_train.value_counts("ctype", normalize=True)[["N","T"]].tolist()
-		print("Margins : ", margins)
-		print(total_res.head())
-		if ("T" in total_res["ctype"]) and ("N" in total_res["ctype"]):
-			print(total_res.value_counts("ctype", normalize=True)[["N","T"]].tolist(), margins)
-
-		logits = logits[total_res["n_cpg"]>0,]
-		total_res  = total_res[total_res["n_cpg"]>0]
-		
-		if args.adjustment:
-			tumour_pred_ratio, fi = deconvolute(logits=logits, margins=margins, dmr_labels=total_res["dmr_label"])
-		else:
-			tumour_pred_ratio, fi = deconvolute(logits=logits, margins=margins)
-		print("Deconvolution result: ", tumour_pred_ratio)
-		pd.DataFrame.from_dict({"cell_type":["T", "N"],
-								"pred":[tumour_pred_ratio, 1-tumour_pred_ratio]}).to_csv(args.output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
-		pd.DataFrame.from_dict({"fi":fi}).to_csv(args.output_path+"/FI.csv", sep="\t", header=True, index=False)
-	else:
-		# Multiple cancer type deconvolution
-		# load DMRs
-		df_dmrs = pd.read_csv(os.path.dirname(params["train_dataset"])+"/dmrs.csv",
-						   sep="\t")
-		margins = {c:r for c, r in zip(unique_ctypes,
-									   df_train.value_counts("ctype", normalize=True)[unique_ctypes].tolist())}
-		estimated_tumour_proportions = dict()
-		for dmr_ctype in df_dmrs["ctype"].unique():
-			# Select reads only from cell-type DMRs
-			ctype_dmr_ids = df_dmrs.loc[df_dmrs["ctype"]==dmr_ctype, "dmr_id"]
-			ctype_reads = total_res.loc[total_res["dmr_label"].isin(ctype_dmr_ids),]
-			print(ctype_reads.head())
-			ctype_logits = logits[list(ctype_reads.index),]
-			ctype_logits = ctype_logits[ctype_reads["n_cpg"]>0,]
-
-			print(logits[0,:], margins)
-			tumour_pred_ratio = deconvolute(logits=ctype_logits, margins=[margins["N"], margins[dmr_ctype]])
-			estimated_tumour_proportions[dmr_ctype] = tumour_pred_ratio
-
-		pd.DataFrame.from_dict({"cell_type":list(estimated_tumour_proportions.keys()),
-								"pred":list(estimated_tumour_proportions.values())}).to_csv(args.output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
