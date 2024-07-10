@@ -21,9 +21,9 @@
 title: MethylBERT
 email: y.jeong@dkfz-heidelberg.de
 description: Tutorial for MethylBERT # this means to ignore newlines until "baseurl:"
-domain: compepigen.github.io/methylbert/    # if you want to force HTTPS, specify the domain without the http at the start, e.g. example.com
-url: "https://compepigen.github.io/methylbert/"  # the base hostname and protocol for your site, e.g. http://example.com
-baseurl: ""      # place folder name if the site is served in a subfolder
+#domain: compepigen.github.io/methylbert/    # if you want to force HTTPS, specify the domain without the http at the start, e.g. example.com
+#url: "https://compepigen.github.io/methylbert/"  # the base hostname and protocol for your site, e.g. http://example.com
+#baseurl: ""      # place folder name if the site is served in a subfolder
 github_username:  hanyangii
 
 # Build settings
