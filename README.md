@@ -1,7 +1,7 @@
 # MethylBERT: A Transformer-based model for read-level DNA methylation pattern identification and tumour deconvolution
 
 This branch is for GitHub Pages. 
-Please move to the `master` branch.
+Please move to the `main` branch.
 
 
 ## Citation
