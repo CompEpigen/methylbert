@@ -34,7 +34,7 @@ plugins:
   - jekyll-remote-theme
 
 # Images
-logo: /assets/img/introduction_methylbert.png
+#logo: /assets/img/introduction_methylbert.png
 
 
 # Exclude from processing.
