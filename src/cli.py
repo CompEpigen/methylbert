@@ -302,7 +302,7 @@ def main(args=None):
 	selected_option =  sys.argv[1]
 
 	# Configuration file is given
-	if ".json" in sys.argv[2]:
+	if (len(sys.argv) >= 3) and (".json" in sys.argv[2]):
 		f_config = sys.argv[2]
 		with open(f_config, "r") as fp:
 			config_dict = json.load(fp)
