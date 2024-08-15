@@ -9,7 +9,7 @@ from methylbert.trainer import MethylBertFinetuneTrainer
 from methylbert.data.vocab import MethylVocab
 from methylbert.data.dataset import MethylBertFinetuneDataset
 from methylbert.utils import set_seed
-from methylbert.deconvolute import grid_search, grid_search_regions, deconvolute
+from methylbert.deconvolute import deconvolute
 from methylbert import __version__
 
 import torch
