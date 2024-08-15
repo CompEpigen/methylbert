@@ -84,7 +84,9 @@ class MethylBertPretrainDataset(MethylBertDataset):
 
 		# Multiprocessing for the sequence tokenisation
 		with mp.Pool(n_cores) as pool:
-			line_labels = pool.map(partial(_line2tokens_pretrain, tokenizer=self.vocab, max_len=self.seq_len), raw_seqs)
+			line_labels = pool.map(partial(_line2tokens_pretrain, 
+								           tokenizer=self.vocab, 
+								           max_len=self.seq_len), raw_seqs)
 			del raw_seqs
 			print("Lines are processed")
 			self.lines = torch.squeeze(torch.tensor(np.array(line_labels, dtype=np.int16)))
@@ -236,7 +238,8 @@ class MethylBertFinetuneDataset(MethylBertDataset):
 
 		# Multiprocessing for the sequence tokenisation
 		with mp.Pool(n_cores) as pool:
-			self.lines = pool.map(partial(_line2tokens_finetune, tokenizer=self.vocab, max_len=self.seq_len, headers=headers), raw_seqs)
+			self.lines = pool.map(partial(_line2tokens_finetune, 
+								   tokenizer=self.vocab, max_len=self.seq_len, headers=headers), raw_seqs)
 			del raw_seqs
 		gc.collect()
 		self.set_dmr_labels = set([l["dmr_label"] for l in self.lines])
@@ -276,6 +279,5 @@ class MethylBertFinetuneDataset(MethylBertDataset):
 			item["methyl_seq"][-1] = 2
 		item["dna_seq"] = torch.cat((torch.tensor([self.vocab.sos_index]), item["dna_seq"]))
 		item["methyl_seq"] = torch.cat((torch.tensor([2]), item["methyl_seq"]))
-		
 		return item
 	

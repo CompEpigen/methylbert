@@ -392,7 +392,6 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
             output_hidden_states=True, 
             hidden_dropout_prob=0.01, 
             vocab_size = len(self.train_data.dataset.vocab))
-
         self.bert = MethylBertEmbeddedDMR(config=config, seq_len=self.train_data.dataset.seq_len)
         
         # Initialize the BERT Language Model, with BERT model

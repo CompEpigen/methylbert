@@ -93,6 +93,7 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
         labels=None,
         ctype_label=None
     ):
+
         outputs = self.bert(
             input_ids,
             attention_mask=attention_mask,
@@ -113,7 +114,7 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
         ctype_logits = self.read_classifier(sequence_output.view(-1,(self.seq_len+1)*769))
         
         loss = self.classification_loss_fct(ctype_logits.view(-1, 2), 
-        nn.functional.one_hot(ctype_label, num_classes=2).to(torch.float32).view(-1, 2))
+                                            F.one_hot(ctype_label, num_classes=2).to(torch.float32).view(-1, 2))
         ctype_logits = ctype_logits.softmax(dim=1)
 
         outputs = {"loss": loss,
