@@ -211,61 +211,7 @@ def run_deconvolute(args):
 			n_grid = 10000, 
 			adjustment = args.adjustment)
 
-	'''
-	# Read classification
-	total_res, logits = trainer.read_classification(data_loader=data_loader,
-												tokenizer=tokenizer,
-												logit=True)
-	print(total_res, logits)
-
-	# Save the classification results 
-	total_res["P_ctype"] = logits[:,1]
-	total_res.to_csv(args.output_path+"/res.csv", sep="\t", header=True, index=False)
-	if args.save_logit:
-		with open(args.output_path+"/test_classification_logit.pk", "wb") as fp:
-			pk.dump(logits, fp)
-
-	total_res["n_cpg"]=[sum(np.array([int(mm) for mm in m])<2) for m in total_res["methyl_seq"]]
 	
-	
-	
-	# Deconvolution
-	unique_ctypes = df_train["ctype"].unique()
-	if total_res["ctype"][0] not in ["N", "T"]:
-		total_res["ctype"] = ["N" if c == "noncancer" else "T" for c in total_res["ctype"]]
-
-	print("UNIQUE ", unique_ctypes)
-
-	# Tumour-normal deconvolution
-	margins = df_train.value_counts("ctype", normalize=True)[["N","T"]].tolist()
-	print("Margins (normal, tumour) : ", margins)
-	print(total_res.head())
-	if ("T" in total_res["ctype"]) and ("N" in total_res["ctype"]):
-		print(total_res.value_counts("ctype", normalize=True)[["N","T"]].tolist(), margins)
-
-	logits = logits[total_res["n_cpg"]>0,]
-	total_res  = total_res[total_res["n_cpg"]>0]
-	
-	if args.adjustment:
-		tumour_pred_ratio, fi, dmr_labels, likelihood, region_pruity, weights =\
-			grid_search_regions(logits=logits, margins=margins, n_grid=10000,regions=total_res["dmr_label"])
-	else:
-		tumour_pred_ratio, fi, likelihood = grid_search(logits=logits, margins=margins, n_grid=10000)
-	
-	print("Deconvolution result: ", tumour_pred_ratio)
-	pd.DataFrame.from_dict({"cell_type":["T", "N"],
-							"pred":tumour_pred_ratio}).to_csv(args.output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
-	if type(fi) is not list:
-		fi = [fi]
-		pd.DataFrame.from_dict({"fi":fi, 
-							    "likelihood": likelihood}).to_csv(args.output_path+"/FI.csv", sep="\t", header=True, index=False)
-	else:
-		pd.DataFrame.from_dict({"dmr_label":dmr_labels, 
-								"fi":fi, 
-								"likelihood": likelihood, 
-								"estimated_purity": region_pruity,
-								"weights": weights}).sort_values("dmr_label").to_csv(args.output_path+"/FI.csv", sep="\t", header=True, index=False)
-	'''
 def run_preprocess(args):
 	finetune_data_generate(f_dmr=args.f_dmr,
 			output_dir=args.output_path,
