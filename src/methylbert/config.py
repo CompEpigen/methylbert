@@ -1,4 +1,17 @@
 from collections import OrderedDict
+from transformers import BertConfig
+
+METHYLBERT_PRETRAINED_CONFIG_ARCHIVE_MAP = {
+    "hanyangii/methylbert_hg19_12l": "https://huggingface.co/hanyangii/methylbert_hg19_12l/raw/main/config.json",
+    "hanyangii/methylbert_hg19_8l": "https://huggingface.co/hanyangii/methylbert_hg19_8l/raw/main/config.json",
+    "hanyangii/methylbert_hg19_6l": "https://huggingface.co/hanyangii/methylbert_hg19_6l/raw/main/config.json",
+    "hanyangii/methylbert_hg19_4l": "https://huggingface.co/hanyangii/methylbert_hg19_4l/raw/main/config.json",
+    "hanyangii/methylbert_hg19_2l": "https://huggingface.co/hanyangii/methylbert_hg19_2l/raw/main/config.json"
+}
+
+class MethylBERTConfig(BertConfig):
+    pretrained_config_archive_map = METHYLBERT_PRETRAINED_CONFIG_ARCHIVE_MAP
+    loss="bce"
 
 class Config(object):
     def __init__(self, config_dict: dict):
@@ -23,7 +36,6 @@ def get_config(**kwargs):
             ("decrease_steps", 200),
             ('eval', False),
             ('amp', False),
-            #("methyl_learning", "cnn"),
             ("gradient_accumulation_steps", 1), 
             ("max_grad_norm", 1.0),
             ("eval", False),

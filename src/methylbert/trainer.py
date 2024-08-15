@@ -10,7 +10,7 @@ from sklearn.metrics import roc_curve, auc, accuracy_score
 from methylbert.network import MethylBertEmbeddedDMR
 from methylbert.data.vocab import MethylVocab
 from methylbert.utils import get_dna_seq
-from methylbert.config import get_config
+from methylbert.config import get_config, MethylBERTConfig
 from transformers import BertForSequenceClassification, BertConfig, BertForMaskedLM
 
 from tqdm import tqdm
@@ -168,19 +168,11 @@ class MethylBertTrainer(object):
 
 
 class MethylBertPretrainTrainer(MethylBertTrainer):
-    """
-    BERT Trainer make the pretrained BERT model with two LM training method.
-
-        1. Masked Language Model : 3.3.1 Task #1: Masked LM
-        2. Next Sentence prediction : 3.3.2 Task #2: Next Sentence Prediction
-
-    please check the details on README.md with simple example.
-
-    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         pass
+
     def create_model(self, *args, **kwargs):
         config = BertConfig(vocab_size = len(self.train_data.dataset.vocab), *args, **kwargs)
         self.bert = BertForMaskedLM(config)
@@ -386,13 +378,16 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
         Create a new MethylBERT model from the configuration
         '''
 
-        config = BertConfig.from_pretrained(config_file, 
+        config = MethylBERTConfig.from_pretrained(config_file, 
             num_labels=self.train_data.dataset.num_dmrs(), 
             output_attentions=True, 
             output_hidden_states=True, 
             hidden_dropout_prob=0.01, 
-            vocab_size = len(self.train_data.dataset.vocab))
-        self.bert = MethylBertEmbeddedDMR(config=config, seq_len=self.train_data.dataset.seq_len)
+            vocab_size = len(self.train_data.dataset.vocab),
+            loss=self._config.loss)
+        
+        self.bert = MethylBertEmbeddedDMR(config=config, 
+                                          seq_len=self.train_data.dataset.seq_len)
         
         # Initialize the BERT Language Model, with BERT model
         self._setup_model()
