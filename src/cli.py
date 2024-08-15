@@ -48,7 +48,7 @@ def finetune_arg_parser(subparsers):
 	parser.add_argument("--corpus_lines", type=int, default=None, help="total number of lines in corpus")
 	
 	# Hyperparams for training
-	parser.add_argument("--loss", type=str, default="bce", help="Loss function for fine-tuning (default: bce)")
+	parser.add_argument("--loss", type=str, default="bce", help="Loss function for fine-tuning. It can be either \'bce\' or \'focal_bce\' (default: bce)")
 	parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Max gradient norm (default: 1.0)")
 	parser.add_argument(
 		"--gradient_accumulation_steps",
@@ -80,7 +80,7 @@ def preprocess_finetune_arg_parser(subparsers):
 	parser.add_argument("-s", "--sc_dataset", required=False, default=None, type=str, help="a file all single-cell bam files are listed up. The first and second columns must indicate file names and cell types if cell types are given. Otherwise, each line must have one file path.")
 	parser.add_argument("-f", "--input_file", required=False, default=None, type=str, help=".bam file to be processed")
 	parser.add_argument("-d", "--f_dmr", required=True, type=str, help=".bed or .csv file DMRs information is contained")
-	parser.add_argument("-o", "--output_dir", required=True, type=str, help="a directory where all generated results will be saved")
+	parser.add_argument("-o", "--output_path", required=True, type=str, help="a directory where all generated results will be saved")
 	parser.add_argument("-r", "--f_ref", required=True, type=str, help=".fasta file containing reference genome")
 
 	parser.add_argument("-nm", "--n_mers", type=int, default=3, help="K for K-mer sequences (default: 3)")
@@ -98,10 +98,6 @@ def run_finetune(args):
 	elif args.pretrain is None:
 		print(f"Pre-trained MethylBERT model for {args.n_encoder} encoder blocks is selected.")
 		args.pretrain = f"hanyangii/methylbert_hg19_{args.n_encoder}l"
-
-
-	if not os.path.exists(args.output_path):
-		os.mkdir(args.output_path)
 
 	with open(args.output_path+"/train_param.txt", "w") as f_param:
 		dict_args = vars(args)
@@ -145,7 +141,7 @@ def run_finetune(args):
 	if args.valid_batch < 0:
 		args.valid_batch = args.batch_size
 
-	test_data_loader = DataLoader(test_dataset, batch_size=args.valid_batch, num_workers=args.num_workers, pin_memory=True,  shuffle=False) if test_dataset is not None else None
+	test_data_loader = DataLoader(test_dataset, batch_size=args.valid_batch, num_workers=args.num_workers, pin_memory=True,  shuffle=False) if args.test_dataset is not None else None
 
 	# BERT train
 	print("Creating BERT Trainer")
@@ -272,7 +268,7 @@ def run_deconvolute(args):
 	'''
 def run_preprocess(args):
 	finetune_data_generate(f_dmr=args.f_dmr,
-			output_dir=args.output_dir,
+			output_dir=args.output_path,
 			f_ref=args.f_ref,
 			sc_dataset=args.sc_dataset,
 			input_file=args.input_file, 
@@ -312,18 +308,24 @@ def main(args=None):
 		if args is None:
 			preprocess_finetune_arg_parser(subparsers)
 			args = parser_init.parse_args()
-			write_args2json(args, os.path.join(args.output_dir, "preprocess_finetune_config.json"))
+			if not os.path.exists(args.output_path):
+				os.mkdir(args.output_path)
+			write_args2json(args, os.path.join(args.output_path, "preprocess_finetune_config.json"))
 		run_preprocess(args)
 	elif selected_option == "finetune":
 		if args is None:		
 			finetune_arg_parser(subparsers)
 			args = parser_init.parse_args()
+			if not os.path.exists(args.output_path):
+				os.mkdir(args.output_path)
 			write_args2json(args, os.path.join(args.output_path, "finetune_config.json"))
 		run_finetune(args)
 	elif selected_option == "deconvolute":
 		if args is None:		
 			deconvolute_arg_parser(subparsers)
 			args = parser_init.parse_args()
+			if not os.path.exists(args.output_path):
+				os.mkdir(args.output_path)
 			write_args2json(args, os.path.join(args.output_path, "deconvolute_config.json"))
 		run_deconvolute(args)
 	else:
