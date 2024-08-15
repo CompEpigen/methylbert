@@ -55,7 +55,7 @@ def grid_search(logits, margins, n_grid, verbose=True):
 		theta = m_theta*(1/n_grid)
 		theta = np.array([1-theta, theta]).reshape([2,1])
 		if logits.shape[1] != theta.shape[0]:
-			raise ValueError(f"Dimensions are wrong: theta {theta.shape}, prob {prob.shape}")
+			raise ValueError(f"Dimensions are wrong: theta {theta.shape}, prob {logits.shape}")
 		grid[0, m_theta] = likelihood_fun(theta, margins, logits)
 		if verbose:
 			pbar.update(1)
@@ -111,7 +111,7 @@ def grid_search_regions(logits, margins, n_grid, regions):
 	
 	estimates = np.clip(estimates, 0, 1)
 
-	return [estimates, 1-estimates], list(fi), dmr_labels, list(likelihood), list(region_purity), list(weights)
+	return [estimates, 1-estimates], list(fi), dmr_labels, list(likelihood), #list(region_purity), list(weights)
 
 def optimise_nll_deconvolute(reads : pd.DataFrame,
 							 margins : pd.Series):
@@ -222,6 +222,6 @@ def deconvolute(trainer : MethylBertFinetuneTrainer,
 		deconv_res = optimise_nll_deconvolute(reads = total_res, margins = margins)
 		deconv_res.to_csv(output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
 	else:
-		raise RuntimeError("There is only one cell type in the training data set. Neither purity estimation nor deconvolution can be performed.")
+		raise RuntimeError(f"There are less than two cell types in the training data set. {margins.keys()} Neither purity estimation nor deconvolution can be performed.")
 
 	
