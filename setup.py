@@ -6,7 +6,7 @@ import os, glob, warnings
 warnings.filterwarnings("ignore")
 
 setup(name='methylbert',
-	version='0.0.2',
+	version='1.0.0',
 
 	packages=find_packages("src"),
 	package_dir = {"": "src"},
