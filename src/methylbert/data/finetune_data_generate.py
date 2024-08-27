@@ -199,10 +199,12 @@ def finetune_data_generate(
     # Sort by statistics if available
     if "areaStat" in dmrs.keys():
         print("DMRs sorted by areaStat")
-        dmrs = dmrs.sort_values(by="areaStat", ascending=False)
+        dmrs["abs_areaStat"]  = dmrs["areaStat"].abs()
+        dmrs = dmrs.sort_values(by="abs_areaStat", ascending=False)
     elif "diff.Methy" in dmrs.keys():
         print("DMRs sorted by diff.Methy")
-        dmrs = dmrs.sort_values(by="diff.Methy", ascending=False)
+        dmrs["abs_diff.Methy"]  = dmrs["diff.Methy"].abs()
+        dmrs = dmrs.sort_values(by="abs_diff.Methy", ascending=False)
     else:
         print("Could not find any statistics to sort DMRs")
 
@@ -280,6 +282,8 @@ def finetune_data_generate(
     else:
         ValueError("Could not find any reads overlapping with the given DMRs. Please try different regions.")
 
+    print("Total sequences per cell type")
+    print(df_reads["ctype"].value_counts())
     # Split the data into train and valid/test
     if (split_ratio < 1.0) and (split_ratio > 0.0):
         fp_train_seq = os.path.join(output_dir, "train_seq.csv")
