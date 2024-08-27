@@ -618,13 +618,16 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
         print(f"Restore the pretrained model {dir_path}")
 
         if load_fine_tune:
+            '''
             if n_dmrs is not None:
                 raise ValueError("You cannot give a new number of DMRs for loading a fine-tuned model. The model should contains one. Please set either n_dmrs=None or load_fine_tune=False")
+            '''
             self.bert = MethylBertEmbeddedDMR.from_pretrained(dir_path, 
                 output_attentions=True, 
                 output_hidden_states=True, 
                 seq_len = self.train_data.dataset.seq_len,
-                loss=self._config.loss
+                loss=self._config.loss,
+                num_labels=n_dmrs
                 )
             
             try:

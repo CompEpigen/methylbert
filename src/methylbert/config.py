@@ -12,6 +12,7 @@ METHYLBERT_PRETRAINED_CONFIG_ARCHIVE_MAP = {
 class MethylBERTConfig(BertConfig):
     pretrained_config_archive_map = METHYLBERT_PRETRAINED_CONFIG_ARCHIVE_MAP
     loss="bce"
+    num_labels=-1
 
 class Config(object):
     def __init__(self, config_dict: dict):

@@ -196,13 +196,16 @@ def run_deconvolute(args):
 	restore_dir = os.path.join(args.model_dir, "bert.model/")
 	trainer = MethylBertFinetuneTrainer(len(tokenizer), save_path='./test',
 										train_dataloader=data_loader, 
-										test_dataloader=data_loader,
+										test_dataloader=data_loader
 										)
-	trainer.load(restore_dir, load_fine_tune=True)
+
+	df_train = pd.read_csv(params["train_dataset"], sep="\t")
+	trainer.load(restore_dir, 
+				 load_fine_tune=True, 
+				 n_dmrs=len(df_train["dmr_label"].unique()))
 	print("Trained model (%s) is restored"%restore_dir)
 	# Calculate margins
-	df_train = pd.read_csv(params["train_dataset"], sep="\t")
-
+	
 	deconvolute(trainer = trainer, 
 			data_loader = data_loader, 
 			df_train = df_train, 
@@ -249,7 +252,7 @@ def main(args=None):
 		with open(f_config, "r") as fp:
 			config_dict = json.load(fp)
 		args = argparse.Namespace(**config_dict)
-
+	
 	if selected_option == "preprocess_finetune":
 		if args is None:
 			preprocess_finetune_arg_parser(subparsers)
