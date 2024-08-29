@@ -182,7 +182,7 @@ def finetune_data_generate(
     # Save the reference genome into a dictionary with chr as a key value
     dict_ref = dict()
     for r in record_iter:
-        dict_ref[r.id] = str(r.seq.upper())
+        dict_ref[str(r.id)] = str(r.seq.upper())
     del record_iter
     
     # Load DMRs into a data frame
@@ -191,8 +191,21 @@ def finetune_data_generate(
         ValueError("The .csv file for DMRs must contain chr, start and end in the header.")
 
     # Remove chrX, chrY, chrM and so on in DMRs
-    regex_expr = "chr\d+" if ignore_sex_chromo else "chr[\d+|X|Y]"
+    # Genome style 
+    if "chr" in str(dmrs["chr"][0]):
+        regex_expr = "chr\d+" if ignore_sex_chromo else "chr[\d+|X|Y]"
+        old_keys = list(dict_ref.keys())
+        for k in old_keys:
+            if "chr" not in k: dict_ref[f"chr{k}"] = dict_ref.pop(k)
+    else: # NCBI style genome
+        dmrs["chr"] = dmrs["chr"].astype(str)
+        regex_expr = "\d+" if ignore_sex_chromo else "[\d+|X|Y]"
+        old_keys = list(dict_ref.keys())
+        for k in old_keys:
+            if "chr" in k: dict_ref[k.split("chr")[1]] = dict_ref.pop(k)
+
     dmrs = dmrs[dmrs["chr"].str.contains(regex_expr, regex=True)]
+    
     if dmrs.shape[0] == 0:
         ValueError("Could not find any DMRs. Please make sure chromosomes have \'chr\' at the beginning.")
 
