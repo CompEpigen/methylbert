@@ -1,0 +1,8 @@
+{
+"input_data": "data/data.csv", 
+"model_dir": "model/", 
+"output_path": "output/", 
+"batch_size": 64, 
+"save_logit": false, 
+"adjustment": false
+}
