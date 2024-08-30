@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.optim import Adam, AdamW
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import LambdaLR
-from torch.cuda.amp import GradScaler
+from torch.amp import GradScaler
 
 from sklearn.metrics import roc_curve, auc, accuracy_score
 
@@ -18,6 +18,7 @@ import numpy as np
 import os, warnings, time
 import pandas as pd
 
+torch.set_warn_always(False) # one warning per process
 
 def learning_rate_scheduler(optimizer, num_warmup_steps: int, num_training_steps: int, decrease_steps: int):
     """ 
