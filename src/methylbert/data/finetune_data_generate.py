@@ -41,7 +41,7 @@ def kmers(seq: str, k: int=3):
             m = 2
 
         # six alphabets indicating cytosine methylation in bismark processed files
-        token = re.sub("[h|H|z|Z|x|X]", "C", token) 
+        token = re.sub("[h|H|z|Z|x|X]", "C", token)
         converted_seq.append(token)
         methyl.append(str(m))
 
@@ -54,7 +54,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         and convert those into 3-mer sequences
 
         bam_file_path: (str)
-            single-cell bam file path 
+            single-cell bam file path
         dict_ref: (dict)
             Reference genome given in a dictionary whose key is chromosome and value is DNA sequences
         k: (int)
@@ -64,7 +64,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         ncores: (int)
             Number of cores to be used for parallel processing, default: 1
     '''
-    
+
     def _reads_overlapping(aln, chromo, start, end, methyl_caller="bismark"):
         '''
         seq_list = list()
@@ -83,9 +83,9 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
             # Only select fully overlapping reads
             if (read.pos  < start) or ((read.pos+read.query_alignment_length) > end):
                 continue
-            
+
             # Remove case-specific mode occured by the quality
-            ref_seq = dict_ref[chromo][read.pos:(read.pos+read.query_alignment_length)].upper() 
+            ref_seq = dict_ref[chromo][read.pos:(read.pos+read.query_alignment_length)].upper()
 
             if methyl_caller == "bismark":
                 ref_seq = process_bismark_read(ref_seq, read)
@@ -107,7 +107,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
 
             # Add processed results as a tag
             read.setTag("RF", value=" ".join(s), replace=True) # reference sequence
-            read.setTag("ME", value="".join(m), replace=True) # methylation pattern sequence 
+            read.setTag("ME", value="".join(m), replace=True) # methylation pattern sequence
 
             # Process back to a dictionary
             read_tags = {t:v for t, v in read.get_tags()}
@@ -120,7 +120,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
             processed_reads = processed_reads.drop(columns=["tags"])
 
         return processed_reads
-        
+
     @globalize
     def _get_methylseq(dmr, bam_file_path: str, k: int, methyl_caller: str):
         '''
@@ -128,7 +128,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         '''
         aln = pysam.AlignmentFile(bam_file_path, "rb")
 
-        processed_reads = _reads_overlapping(aln, 
+        processed_reads = _reads_overlapping(aln,
                                              dmr["chr"], int(dmr["start"]), int(dmr["end"]),
                                              methyl_caller)
         if processed_reads.shape[0] > 0:
@@ -138,13 +138,13 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
 
     if ncores > 1:
         with mp.Pool(ncores) as pool:
-            # Convert read sequences to k-mer sequences 
-            seqs = pool.map(partial(_get_methylseq, 
+            # Convert read sequences to k-mer sequences
+            seqs = pool.map(partial(_get_methylseq,
                                     bam_file_path = bam_file_path, k=k, methyl_caller=methyl_caller),
                             dmrs.to_dict("records"))
     else:
         seqs = [_get_methylseq(dmr, bam_file_path = bam_file_path, k=k, methyl_caller = methyl_caller) for dmr in dmrs.to_dict("records")]
-        
+
     # Filter None values that means no overlapping read with the given DMR
     seqs = list(filter(lambda i: i is not None, seqs))
     if len(seqs) > 0:
@@ -157,7 +157,7 @@ def finetune_data_generate(
         output_dir: str,
         f_ref: str,
         sc_dataset: str = None,
-        input_file: str = None, 
+        input_file: str = None,
         n_mers: int = 3,
         split_ratio: float = 1.0,
         n_dmrs: int = -1,
@@ -167,7 +167,7 @@ def finetune_data_generate(
         methyl_caller: str = "bismark"
     ):
 
-    # Setup random seed 
+    # Setup random seed
     random.seed(seed)
     np.random.seed(seed)
 
@@ -178,13 +178,13 @@ def finetune_data_generate(
 
     # Reference genome
     record_iter = SeqIO.parse(f_ref, "fasta")
-    
+
     # Save the reference genome into a dictionary with chr as a key value
     dict_ref = dict()
     for r in record_iter:
         dict_ref[r.id] = str(r.seq.upper())
     del record_iter
-    
+
     # Load DMRs into a data frame
     dmrs = pd.read_csv(f_dmr, sep="\t", index_col=None)
     if ("chr" not in dmrs.keys()) or ("start" not in dmrs.keys()) or ("end" not in dmrs.keys()):
@@ -206,7 +206,7 @@ def finetune_data_generate(
     else:
         print("Could not find any statistics to sort DMRs")
 
-    # Select top n dmrs based on 
+    # Select top n dmrs based on
     if n_dmrs > 0:
         print(f"{n_dmrs} are selected based on the statistics")
         list_dmrs = list()
@@ -223,7 +223,7 @@ def finetune_data_generate(
     if "dmr_id" not in dmrs.keys():
       dmrs["dmr_id"] = range(len(dmrs))
 
-    # Save DMRs in a new file 
+    # Save DMRs in a new file
     dmrs.to_csv(fp_dmr, sep="\t", index=False)
     print(dmrs.head())
 
@@ -242,14 +242,12 @@ def finetune_data_generate(
             sc_files = fp_sc_dataset.readlines()
     else:
         sys.exit("Either a list of input files or a file path must be given.")
-    
+
     # Collect reads from the .bam files
     df_reads = list()
     for f_sc in sc_files:
         f_sc = f_sc.strip().split("\t")
         f_sc_bam = f_sc[0]
-
-        
 
         extracted_reads = read_extract(f_sc_bam, dict_ref, k=3, dmrs=dmrs, ncores=n_cores, methyl_caller=methyl_caller)
         if extracted_reads is None:
@@ -294,3 +292,4 @@ def finetune_data_generate(
         fp_data_seq = os.path.join(output_dir, "data.csv")
         df_reads.to_csv(fp_data_seq, sep="\t", header=True, index=None)
 
+    return df_reads

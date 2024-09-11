@@ -1,0 +1,46 @@
+[project]
+name = "methylbert"
+version = "1.0.0"
+description = "A Transformer-based model for read-level DNA methylation pattern identification and tumour deconvolution"
+authors = [
+    { name = "Yunhee Jeong", email = "y.jeong@dkfz-heidelberg.de" }
+]
+
+dependencies = [
+    "biopython==1.84",
+    "matplotlib==3.9.2",
+    "numpy==2.1.1",
+    "pandas==2.2.2",
+    "pysam==0.22.1",
+    "scikit-learn==1.5.1",
+    "scipy==1.14.1",
+    "torch==2.4.1",
+    "tqdm==4.66.5",
+    "transformers==4.44.2",
+    "tokenizers==0.19.1",
+    "urllib3==2.2.2",
+    "zipp==3.13.0"
+]
+requires-python = ">=3.11"
+
+[tool.setuptools]
+packages = ["src"]
+package-dir = {"" = "src"}
+
+[tool.setuptools.package-data]
+# Include only Python files (*.py) for installation
+"src" = ["*.py"]
+"src/methylbert" = ["*.py"]
+
+[project.entry-points.console_scripts]
+methylbert = "cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.test]
+test-suite = "test"
