@@ -23,24 +23,18 @@ dependencies = [
 ]
 requires-python = ">=3.11"
 
-[tool.setuptools]
-packages = ["src"]
-package-dir = {"" = "src"}
+[tool.setuptools.packages.find]
+where = ["src", "test"]
+include = ["code*"]
+exclude = []
 
 [tool.setuptools.package-data]
-# Include only Python files (*.py) for installation
-"src" = ["*.py"]
-"src/methylbert" = ["*.py"]
+"test" = ["*"]
+recipe = ["*.py"]
 
 [project.entry-points.console_scripts]
 methylbert = "cli:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
-
-[tool.setuptools.test]
-test-suite = "test"
