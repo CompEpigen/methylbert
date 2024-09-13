@@ -19,7 +19,7 @@ _MethylBERT_ runs most stably with __Python=3.7__
 ### Pip Installation
 _MethylBERT_ is available as a [python package](https://pypi.org/project/methylbert/).
 ```
-conda create -n methylbert -c conda-forge python=3.7 cudatoolkit==11.1.1 pip
+conda create -n methylbert -c conda-forge python=3.11 cudatoolkit==11.8 pip
 conda activate methylbert
 pip install methylbert
 ```
