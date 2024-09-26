@@ -1,4 +1,5 @@
-from typing import Tuple, List
+from typing import List, Tuple
+
 
 def parse_cigar(cigar: str):
 	num = 0
@@ -41,9 +42,6 @@ def process_bismark_read(ref_seq, read):
 		# XM tag stores cytosine methyl patterns in bismark
 		xm_tag = read.get_tag("XM")
 	except KeyError:
-		# print("no methylation call for read", read.reference_id )
-		return None
-	except ValueError:
 		# print("no methylation call for read", read.reference_id )
 		return None
 

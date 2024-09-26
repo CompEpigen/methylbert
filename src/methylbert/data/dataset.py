@@ -1,14 +1,16 @@
-from torch.utils.data import Dataset
-import torch, gc
+import gc
+import multiprocessing as mp
+import random
+from copy import deepcopy
+from functools import partial
 
 import numpy as np
-from copy import deepcopy
-import multiprocessing as mp
-from functools import partial
-import random
+import pandas as pd
+import torch
+from torch.utils.data import Dataset
 
 from methylbert.data.vocab import MethylVocab
-import pandas as pd
+
 
 def _line2tokens_pretrain(l, tokenizer, max_len=120):
 	'''
@@ -30,11 +32,10 @@ def _parse_line(l, headers):
 		raise ValueError("The header must contain dna_seq, methyl_seq, ctype, dmr_ctype, dmr_label")
 
 	# Separate n-mers tokens and labels from each line
-	l = l.strip().split("\t")
+	l = l.split("\t")  # don't add strip; some columns may be None
 	if len(headers) == len(l):
 		l = {k: v for k, v in zip(headers, l)}
 	else:
-		print(headers, l)
 		raise ValueError(f"Only {len(headers)} elements are in the input file header, whereas the line has {len(l)} elements.")
 
 	# Cell-type label is binary (whether the cell type corresponds to the DMR cell type)

@@ -10,12 +10,13 @@ import time
 import uuid
 import warnings
 from functools import partial
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
 import pysam
 from Bio import SeqIO
+from pysam import AlignedSegment
 from sklearn.model_selection import train_test_split
 from tqdm.auto import tqdm
 
@@ -57,6 +58,19 @@ def kmers(seq: str, k: int=3):
 
     return converted_seq, methyl
 
+def is_acceptable_read(read: AlignedSegment, mapping_quality: Optional[int] = 20) -> bool:
+    """Returns true if a read should be considered for analysis, false otherwise."""
+    if mapping_quality is not None and read.mapping_quality < mapping_quality:
+        return False
+    else:
+        return (
+            not read.is_duplicate and
+            not read.is_secondary and
+            not read.is_supplementary and
+            not read.is_qcfail and
+            not read.is_unmapped
+        )
+
 
 def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame, ncores: int=1, methyl_caller: str = "bismark"):
     '''
@@ -89,9 +103,32 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         fetched_reads = aln.fetch(chromo, start, end, until_eof=True)
         processed_reads = list()
 
+        disregarded_info = []
         for read in fetched_reads:
+            # TODO: remove this from methylbert package and pass a function as arg
+            mapping_quality = 20
+            if (mapping_quality is not None and read.mapping_quality < mapping_quality):
+                disregarded_info.append({"type": "no_mapping_quality"})
+                continue
+            if read.is_duplicate:
+                disregarded_info.append({"type": "is_duplicated"})
+                continue
+            if read.is_secondary:
+                disregarded_info.append({"type": "is_secondary"})
+                continue
+            if read.is_supplementary:
+                disregarded_info.append({"type": "is_supplementary"})
+                continue
+            if read.is_qcfail:
+                disregarded_info.append({"type": "is_qcfail"})
+                continue
+            if read.is_unmapped:
+                disregarded_info.append({"type": "is_unmapped"})
+                continue
+
             # Only select fully overlapping reads
             if (read.pos  < start) or ((read.pos+read.query_alignment_length) > end):
+                disregarded_info.append({"type": "not_fully_within"})
                 continue
 
             # Remove case-specific mode occured by the quality
@@ -103,10 +140,12 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
                 ref_seq = process_dorado_read(ref_seq, read)
 
             if ref_seq is None:
+                disregarded_info.append({"type": "refseq_is_none"})
                 continue
 
             # When there is no CpG methylation patterns after processing
             if "z" not in ref_seq.lower():
+                disregarded_info.append({"type": "no_cpg"})
                 continue
 
             # K-mers
@@ -129,7 +168,11 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         if "tags" in processed_reads.keys():
             processed_reads = processed_reads.drop(columns=["tags"])
 
-        return processed_reads
+        if len(disregarded_info) > 0:
+            removed_df = pd.DataFrame(disregarded_info)
+        else:
+            removed_df = pd.DataFrame()
+        return processed_reads, removed_df
 
     @globalize
     def _get_methylseq(dmr, bam_file_path: str, k: int, methyl_caller: str):
@@ -141,10 +184,14 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         processed_reads = _reads_overlapping(aln,
                                              dmr["chr"], int(dmr["start"]), int(dmr["end"]),
                                              methyl_caller)
+        removed_reads = processed_reads[1]
+        if removed_reads.shape[0] > 0:
+            removed_reads["filepath"] = bam_file_path
+        processed_reads = processed_reads[0]
         if processed_reads.shape[0] > 0:
             processed_reads = processed_reads.assign(dmr_ctype = dmr["ctype"],
                                                      dmr_label = dmr["dmr_id"])
-            return processed_reads
+            return (processed_reads, removed_reads)
 
     if ncores > 1:
         with mp.Pool(ncores) as pool:
@@ -153,6 +200,8 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
                                     bam_file_path=bam_file_path, k=k,
                                     methyl_caller=methyl_caller),
                             dmrs.to_dict("records"))
+            removed_df = [s[1] for s in seqs if s is not None]
+            seqs = [s[0] for s in seqs if s is not None]
     else:
         seqs = [_get_methylseq(dmr, bam_file_path = bam_file_path, k=k,
                                methyl_caller = methyl_caller)
@@ -161,7 +210,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
     # Filter None values that means no overlapping read with the given DMR
     seqs = list(filter(lambda i: i is not None, seqs))
     if len(seqs) > 0:
-        return pd.concat(seqs, ignore_index=True)
+        return pd.concat(seqs, ignore_index=True), pd.concat(removed_df, ignore_index=True)
     else:
         warnings.warn(f"Zero reads were extracted from {bam_file_path}")
 
@@ -266,15 +315,15 @@ def finetune_data_generate(
     # Collect reads from the .bam files
     df_reads = list()
     tqdm_bar = tqdm(total=len(sc_files), desc="Collecting reads from .bam files")
+    files_lbl_map = {}
+    df_removed = []
     for f_sc in sc_files:
         f_sc = f_sc.strip().split("\t")
         f_sc_bam = f_sc[0]
 
-        extracted_reads = read_extract(f_sc_bam, dict_ref, k=3, dmrs=dmrs, ncores=n_cores, methyl_caller=methyl_caller)
+        extracted_reads, removed_df = read_extract(f_sc_bam, dict_ref, k=3, dmrs=dmrs, ncores=n_cores, methyl_caller=methyl_caller)
         if extracted_reads is None:
             continue
-
-        extracted_reads["filename"] = os.path.basename(f_sc_bam)
 
         # cell type for the single-cell data
         '''
@@ -293,9 +342,16 @@ def finetune_data_generate(
         extracted_reads = extracted_reads.rename(columns={"RF":"dna_seq", "ME":"methyl_seq"})
 
         if(extracted_reads.shape[0] > 0):
+            filename = os.path.basename(f_sc_bam)
+            files_lbl_map[filename] = f_sc[1]
+            extracted_reads["filename"] = filename
             df_reads.append(extracted_reads)
-
+            df_removed.append(removed_df)
         tqdm_bar.update()
+
+    if len(df_removed) > 0:
+        df_removed = pd.concat(df_removed, ignore_index=True)
+        df_removed.to_csv("df_removed.csv", index=None)
 
     # Integrate all reads and shuffle
     if len(df_reads) > 0:
@@ -307,31 +363,43 @@ def finetune_data_generate(
     else:
         ValueError("Could not find any reads overlapping with the given DMRs. Please try different regions.")
 
-    # Split the data into train and train/valid/test
+    # Split the data into train and train/valid/test by patient/bam file
     if np.sum(split_ratios) == 1 and len(split_ratios) == 3:
         fp_train_seq = os.path.join(output_dir, "train_seq.csv")
         fp_val_seq = os.path.join(output_dir, "val_seq.csv")
         fp_test_seq = os.path.join(output_dir, "test_seq.csv")
 
-        # TODO: make this split memory efficient
         val_test_size = 1 - split_ratios[0]
-        df_train, df_test = train_test_split(df_reads, test_size=val_test_size,
-                                             random_state=seed,
-                                             stratify=df_reads["ctype"])
-        test_size = split_ratios[2] / (split_ratios[0] + split_ratios[1])
-        df_val, df_test = train_test_split(df_test, test_size=test_size,
-                                           random_state=seed,
-                                           stratify=df_test["ctype"])
-        if verbose > 0:
-            print("Size - train %d seqs , valid %d seqs "%(df_train.shape[0],
-                                                           df_test.shape[0]))
+        train_files, test_files = train_test_split(
+            list(files_lbl_map.keys()),
+            test_size=val_test_size, random_state=seed,
+            stratify=list(files_lbl_map.values())
+        )
 
-        # Write train & test files
-        df_train.to_csv(fp_train_seq, sep="\t", header=True, index=None)
-        df_val.to_csv(fp_val_seq, sep="\t", header=True, index=None)
-        df_test.to_csv(fp_test_seq, sep="\t", header=True, index=None)
+        test_size = split_ratios[2] / (split_ratios[1] + split_ratios[2])
+        val_files, test_files = train_test_split(
+            test_files,
+            test_size=test_size, random_state=seed,
+            stratify=[files_lbl_map[e] for e in test_files]
+        )
+
+        # TODO: we should somehow account for ctype stratification
+
+        # Write train & test files (adding a final column because of sep="\t")
+        df_reads["non_null_col"] = ""
+        df_reads.loc[df_reads["filename"].isin(train_files), :] \
+            .to_csv(fp_train_seq, sep="\t", header=True, index=None)
+        df_reads.loc[df_reads["filename"].isin(val_files), :] \
+            .to_csv(fp_val_seq, sep="\t", header=True, index=None)
+        df_reads.loc[df_reads["filename"].isin(test_files), :] \
+            .to_csv(fp_test_seq, sep="\t", header=True, index=None)
+
+        if verbose > 0:
+            print("Size - train %d seqs , valid %d seqs "%(df_reads.loc[df_reads["filename"].isin(train_files), :].shape[0],
+                                                           df_reads.loc[df_reads["filename"].isin(test_files), :].shape[0]))
+
     else:
         fp_data_seq = os.path.join(output_dir, "data.csv")
         df_reads.to_csv(fp_data_seq, sep="\t", header=True, index=None)
 
-    return df_reads
+    return df_reads, df_removed
