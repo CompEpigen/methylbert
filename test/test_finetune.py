@@ -189,9 +189,10 @@ if __name__=="__main__":
 	
 	reset_dir(save_path)
 	test_finetune_no_pretrain_focal(tokenizer, save_path, train_data_loader, test_data_loader, model_dir, train_step) 
-
-	reset_dir(save_path)
-	test_finetune_savefreq(tokenizer, save_path, train_data_loader, test_data_loader, model_dir, train_step, save_freq=1)
+	
+	#TODO
+	#reset_dir(save_path)
+	#test_finetune_savefreq(tokenizer, save_path, train_data_loader, test_data_loader, model_dir, train_step, save_freq=1)
 	
 	# Multiple cell type
 	out_dir="data/multi_cell_type/"
