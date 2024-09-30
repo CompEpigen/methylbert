@@ -1,6 +1,6 @@
 FROM mambaorg/micromamba
 
-RUN micromamba install -n base -y -c conda-forge cudatoolkit==11.1.1 pip python==3.7
+RUN micromamba install -n base -y -c conda-forge python=3.9 cudatoolkit==11.1.1 pip freetype-py
 RUN micromamba clean --all --yes
 
 #if you need to run pip install in the same environment, uncomment the following lines
