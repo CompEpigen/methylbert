@@ -14,12 +14,12 @@ Yunhee Jeong, Karl Rohr, Pavlo Lutsik,
 bioRxiv 2023.10.29.564590; doi: https://doi.org/10.1101/2023.10.29.564590
 
 ## Installation
-_MethylBERT_ runs most stably with __Python=3.7__
+_MethylBERT_ runs most stably with __Python=3.9__
 
 ### Pip Installation 
 _MethylBERT_ is available as a [python package](https://pypi.org/project/methylbert/).
 ```
-conda create -n methylbert -c conda-forge python=3.7 cudatoolkit==11.1.1 pip
+conda create -n methylbert -c conda-forge python=3.9 cudatoolkit==11.1.1 pip freetype-py
 conda activate methylbert
 pip install methylbert
 ```
@@ -27,7 +27,7 @@ pip install methylbert
 ### Manual Installation
 You can set up your conda environment with the `setup.py` file. 
 ```
-conda create -n methylbert -c conda-forge python=3.7 cudatoolkit==11.1.1 pip
+conda create -n methylbert -c conda-forge python=3.9 cudatoolkit==11.1.1 pip freetype-py
 conda activate methylbert
 git clone https://github.com/hanyangii/methylbert.git
 cd methylbert
