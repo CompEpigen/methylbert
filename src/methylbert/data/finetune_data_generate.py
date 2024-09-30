@@ -58,19 +58,6 @@ def kmers(seq: str, k: int=3):
 
     return converted_seq, methyl
 
-def is_acceptable_read(read: AlignedSegment, mapping_quality: Optional[int] = 20) -> bool:
-    """Returns true if a read should be considered for analysis, false otherwise."""
-    if mapping_quality is not None and read.mapping_quality < mapping_quality:
-        return False
-    else:
-        return (
-            not read.is_duplicate and
-            not read.is_secondary and
-            not read.is_supplementary and
-            not read.is_qcfail and
-            not read.is_unmapped
-        )
-
 
 def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame, ncores: int=1, methyl_caller: str = "bismark"):
     '''
@@ -103,32 +90,9 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         fetched_reads = aln.fetch(chromo, start, end, until_eof=True)
         processed_reads = list()
 
-        disregarded_info = []
         for read in fetched_reads:
-            # TODO: remove this from methylbert package and pass a function as arg
-            mapping_quality = 20
-            if (mapping_quality is not None and read.mapping_quality < mapping_quality):
-                disregarded_info.append({"type": "no_mapping_quality"})
-                continue
-            if read.is_duplicate:
-                disregarded_info.append({"type": "is_duplicated"})
-                continue
-            if read.is_secondary:
-                disregarded_info.append({"type": "is_secondary"})
-                continue
-            if read.is_supplementary:
-                disregarded_info.append({"type": "is_supplementary"})
-                continue
-            if read.is_qcfail:
-                disregarded_info.append({"type": "is_qcfail"})
-                continue
-            if read.is_unmapped:
-                disregarded_info.append({"type": "is_unmapped"})
-                continue
-
             # Only select fully overlapping reads
             if (read.pos  < start) or ((read.pos+read.query_alignment_length) > end):
-                disregarded_info.append({"type": "not_fully_within"})
                 continue
 
             # Remove case-specific mode occured by the quality
@@ -140,12 +104,10 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
                 ref_seq = process_dorado_read(ref_seq, read)
 
             if ref_seq is None:
-                disregarded_info.append({"type": "refseq_is_none"})
                 continue
 
             # When there is no CpG methylation patterns after processing
             if "z" not in ref_seq.lower():
-                disregarded_info.append({"type": "no_cpg"})
                 continue
 
             # K-mers
@@ -168,40 +130,29 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         if "tags" in processed_reads.keys():
             processed_reads = processed_reads.drop(columns=["tags"])
 
-        if len(disregarded_info) > 0:
-            removed_df = pd.DataFrame(disregarded_info)
-        else:
-            removed_df = pd.DataFrame()
-        return processed_reads, removed_df
+        return processed_reads
 
     @globalize
     def _get_methylseq(dmr, bam_file_path: str, k: int, methyl_caller: str):
         '''
-        Return a dictionary of DNA seq, cell type and methylation seq processed in a 3-mer seq
+            Return a dictionary of DNA seq, cell type and methylation seq processed in a 3-mer seq
         '''
         aln = pysam.AlignmentFile(bam_file_path, "rb")
 
         processed_reads = _reads_overlapping(aln,
                                              dmr["chr"], int(dmr["start"]), int(dmr["end"]),
                                              methyl_caller)
-        removed_reads = processed_reads[1]
-        if removed_reads.shape[0] > 0:
-            removed_reads["filepath"] = bam_file_path
-        processed_reads = processed_reads[0]
         if processed_reads.shape[0] > 0:
             processed_reads = processed_reads.assign(dmr_ctype = dmr["ctype"],
                                                      dmr_label = dmr["dmr_id"])
-            return (processed_reads, removed_reads)
+            return processed_reads
 
     if ncores > 1:
         with mp.Pool(ncores) as pool:
             # Convert read sequences to k-mer sequences
             seqs = pool.map(partial(_get_methylseq,
-                                    bam_file_path=bam_file_path, k=k,
-                                    methyl_caller=methyl_caller),
+                                    bam_file_path = bam_file_path, k=k, methyl_caller=methyl_caller),
                             dmrs.to_dict("records"))
-            removed_df = [s[1] for s in seqs if s is not None]
-            seqs = [s[0] for s in seqs if s is not None]
     else:
         seqs = [_get_methylseq(dmr, bam_file_path = bam_file_path, k=k,
                                methyl_caller = methyl_caller)
@@ -210,9 +161,10 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
     # Filter None values that means no overlapping read with the given DMR
     seqs = list(filter(lambda i: i is not None, seqs))
     if len(seqs) > 0:
-        return pd.concat(seqs, ignore_index=True), pd.concat(removed_df, ignore_index=True)
+        return pd.concat(seqs, ignore_index=True)
     else:
         warnings.warn(f"Zero reads were extracted from {bam_file_path}")
+
 
 def finetune_data_generate(
         f_dmr: str,
@@ -227,7 +179,8 @@ def finetune_data_generate(
         seed: int = 950410,
         ignore_sex_chromo: bool = True,
         methyl_caller: str = "bismark",
-        verbose: int = 2
+        verbose: int = 2,
+        read_extract_sequences_func: Optional[callable] = None
     ):
 
     # Setup random seed
@@ -248,7 +201,7 @@ def finetune_data_generate(
         dict_ref[r.id] = str(r.seq.upper())
     del record_iter
 
-    # Load DMRs into a data frame
+    # Load DMRs into a dataframe
     dmrs = pd.read_csv(f_dmr, sep="\t", index_col=None)
     if ("chr" not in dmrs.keys()) or ("start" not in dmrs.keys()) or ("end" not in dmrs.keys()):
         ValueError("The .csv file for DMRs must contain chr, start and end in the header.")
@@ -316,12 +269,22 @@ def finetune_data_generate(
     df_reads = list()
     tqdm_bar = tqdm(total=len(sc_files), desc="Collecting reads from .bam files")
     files_lbl_map = {}
-    df_removed = []
     for f_sc in sc_files:
         f_sc = f_sc.strip().split("\t")
         f_sc_bam = f_sc[0]
 
-        extracted_reads, removed_df = read_extract(f_sc_bam, dict_ref, k=3, dmrs=dmrs, ncores=n_cores, methyl_caller=methyl_caller)
+        if read_extract_sequences_func is None:
+            extracted_reads = read_extract(
+                f_sc_bam, dict_ref, k=3, dmrs=dmrs,
+                ncores=n_cores, methyl_caller=methyl_caller
+            )
+        else:
+            # custom function
+            extracted_reads = read_extract_sequences_func(
+                f_sc_bam, dict_ref, k=3, dmrs=dmrs,
+                ncores=n_cores, methyl_caller=methyl_caller
+            )
+
         if extracted_reads is None:
             continue
 
@@ -346,12 +309,8 @@ def finetune_data_generate(
             files_lbl_map[filename] = f_sc[1]
             extracted_reads["filename"] = filename
             df_reads.append(extracted_reads)
-            df_removed.append(removed_df)
-        tqdm_bar.update()
 
-    if len(df_removed) > 0:
-        df_removed = pd.concat(df_removed, ignore_index=True)
-        df_removed.to_csv("df_removed.csv", index=None)
+        tqdm_bar.update()
 
     # Integrate all reads and shuffle
     if len(df_reads) > 0:
@@ -402,4 +361,4 @@ def finetune_data_generate(
         fp_data_seq = os.path.join(output_dir, "data.csv")
         df_reads.to_csv(fp_data_seq, sep="\t", header=True, index=None)
 
-    return df_reads, df_removed
+    return df_reads
