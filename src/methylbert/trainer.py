@@ -6,6 +6,7 @@ import mlflow
 import numpy as np
 import pandas as pd
 import torch
+import torch.cuda.amp as amp
 import torch.nn as nn
 from sklearn.metrics import accuracy_score, auc, roc_curve
 from torch.cuda.amp import GradScaler
@@ -152,7 +153,7 @@ class MethylBertTrainer(object):
 
     def _acc(self, pred, label):
         """
-        Calculate accruacy between the predicted and the ground-truth values
+        Calculate accuracy between the predicted and the ground-truth values
 
         :param pred: predicted values
         :param label: ground-truth values
@@ -364,7 +365,6 @@ class MethylBertPretrainTrainer(MethylBertTrainer):
                 break
 
 
-
 class MethylBertFinetuneTrainer(MethylBertTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -409,14 +409,12 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
 
         mean_loss = 0
         self.model.eval()
+        with torch.no_grad():
+            for i, batch in enumerate(data_loader):
+                # 0. batch_data will be sent into the device(GPU or cpu)
+                data = {key: value.to(self.device) for key, value in batch.items() if type(value) != list}
 
-        for i, batch in enumerate(data_loader):
-
-            # 0. batch_data will be sent into the device(GPU or cpu)
-            data = {key: value.to(self.device) for key, value in batch.items() if type(value) != list}
-            with torch.no_grad():
-                with torch.autocast(device_type="cuda" if self._config.with_cuda else "cpu",
-                                    enabled=self._config.amp):
+                with torch.autocast(device_type="cuda" if self._config.with_cuda else "cpu", enabled=self._config.amp):
                     mask_lm_output = self.model.forward(step=self.step,
                                             input_ids = data["dna_seq"],
                                             token_type_ids=data["methyl_seq"],
@@ -426,17 +424,17 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                 loss = mask_lm_output["loss"].mean().item() if "cuda" in self.device.type else mask_lm_output["loss"].item()
                 mean_loss += loss/len(data_loader)
 
-                predict_res["dmr_label"].append(data["dmr_label"].cpu().detach())
-                predict_res["pred_ctype_label"].append(np.argmax(mask_lm_output["classification_logits"].cpu().detach(), axis=-1))
-                predict_res["ctype_label"].append(data["ctype_label"].cpu().detach())
+                torch.cuda.synchronize()
+
+                predict_res["dmr_label"].append(data["dmr_label"].detach().cpu())
+                predict_res["pred_ctype_label"].append(torch.argmax(mask_lm_output["classification_logits"], dim=-1).detach().cpu())
+                predict_res["ctype_label"].append(data["ctype_label"].detach().cpu())
 
                 if return_logits:
-                    logits.append(mask_lm_output["classification_logits"].cpu().detach().numpy())
+                    logits.append(mask_lm_output["classification_logits"].detach().cpu().numpy())
 
-
-            del mask_lm_output
-            del data
-
+                del mask_lm_output
+                del data
 
         predict_res["dmr_label"] = np.concatenate(predict_res["dmr_label"],  axis=0)
         predict_res["ctype_label"] = np.concatenate(predict_res["ctype_label"],  axis=0)
@@ -500,9 +498,12 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
 
         duration = 0
         epoch_progress_bar = tqdm(total=epochs, desc="Training...")
+        epoch_loss = 0
         for epoch in range(epochs):
-            steps_progress_bar = tqdm(total=steps, desc=f"Epoch {epoch+1}/{epochs}")
+            steps_progress_bar = tqdm(total=min(steps, len(data_loader)),
+                                      desc=f"Epoch {epoch+1}/{epochs}")
             for i, batch in enumerate(data_loader):
+                step_start = time.time()
                 # 0. batch_data will be sent into the device(GPU or cpu)
                 data = {key: value.to(self.device) for key, value in batch.items() if type(value) != list}
 
@@ -510,19 +511,19 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                 with torch.autocast(device_type="cuda" if self._config.with_cuda else "cpu",
                                     enabled=self._config.amp):
                     mask_lm_output = self.model.forward(step=self.step,
-                                            input_ids = data["dna_seq"],
+                                            input_ids=data["dna_seq"],
                                             token_type_ids=data["methyl_seq"],
-                                            labels = data["dmr_label"],
+                                            labels=data["dmr_label"],
                                             ctype_label=data["ctype_label"])
                 loss = mask_lm_output["loss"]
 
                 # Concatenate predicted sequences for the evaluation
-                train_prediction_res["dmr_label"].append(data["dmr_label"].cpu().detach())
+                train_prediction_res["dmr_label"].append(data["dmr_label"].detach().cpu())
 
 
                 # Cell-type classification
                 train_prediction_res["pred_ctype_label"].append(np.argmax(mask_lm_output["classification_logits"].cpu().detach(), axis=-1))
-                train_prediction_res["ctype_label"].append(data["ctype_label"].cpu().detach())
+                train_prediction_res["ctype_label"].append(data["ctype_label"].detach().cpu())
 
 
                 # Calculate loss and back-propagation
@@ -530,11 +531,15 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                 loss = loss/self._config.gradient_accumulation_steps
                 scaler.scale(loss).backward(retain_graph=True) if self._config.amp else loss.backward(retain_graph=True)
 
-                global_step_loss += loss.item()
-                duration += time.time() - start
+                loss_val = loss.item()
+                global_step_loss += loss_val
+                epoch_loss += loss_val
+                self._log_to_mlflow({"train_loss": loss}, self.step + (epoch * len(data_loader )) + 1)
 
+                duration += time.time() - start
                 # Gradient accumulation
                 if (local_step+1) % self._config.gradient_accumulation_steps == 0:
+                    gradient_accum_start = time.time()
                     if self._config.amp:
                         scaler.unscale_(self.optim)
                         nn.utils.clip_grad_norm_(self.model.parameters(), self._config.max_grad_norm)
@@ -547,8 +552,8 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                     self.scheduler.step()
                     self.model.zero_grad()
 
+                if (local_step+1) % self._config.eval_freq == 0 or local_step == 0:
                     # Evaluation
-
                     eval_pred, eval_loss = self._eval_iteration(self.test_data)
                     eval_acc = self._acc(eval_pred["pred_ctype_label"], eval_pred["ctype_label"])
 
@@ -589,25 +594,27 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
 
                     if mlflow_logging:
                         metrics = {
-                            "global_step_loss": global_step_loss,
                             "lr": self.optim.param_groups[0]["lr"],
                             "eval_loss": eval_loss,
-                            "duration": duration
+                            "eval_acc": eval_acc,
+                            "duration": duration,
                         }
-                        self._log_to_mlflow(metrics, self.step)
+                        self._log_to_mlflow(metrics, self.step + (epoch * len(data_loader) + 1))
 
-                    self.step += 1
-                    duration=0
-                    global_step_loss = 0
-
+                    steps_progress_bar.set_postfix(eval_loss=eval_loss)
                     # Reset prediction result
                     del train_prediction_res
                     train_prediction_res =  {"dmr_label":[], "pred_ctype_label":[], "ctype_label":[]}
 
+                step_duration = time.time() - step_start
 
+                self._log_to_mlflow({"step_duration": step_duration}, self.step + (epoch * len(data_loader) + 1))
+
+                self.step += 1
+                duration=0
+                global_step_loss = 0
 
                 steps_progress_bar.update()
-                steps_progress_bar.set_postfix(eval_loss=eval_loss)
 
                 if steps == self.step:
                     break
@@ -615,7 +622,9 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
 
             steps_progress_bar.close()
             epoch_progress_bar.update()
-
+            avg_epoch_loss  = epoch_loss / len(data_loader)
+            self._log_to_mlflow({"avg_epoch_loss ": avg_epoch_loss}, epoch + 1)
+            epoch_loss = 0
             if steps == self.step:
                 break
 
