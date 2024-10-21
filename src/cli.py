@@ -38,7 +38,8 @@ def finetune_arg_parser(subparsers):
 
 	# For a pre-trained model
 	parser.add_argument("-p", "--pretrain", type=str, default=None, help="path to the saved pretrained model to restore")
-	parser.add_argument("-l", "--n_encoder", type=int, default=None, help="number of encoder blocks. One of [12, 8, 6] need to be given. A pre-trained MethylBERT model is downloaded accordingly. Ignored when -p (--pretrain) is given.")
+	parser.add_argument("-l", "--n_encoder", type=int, default=None, help="number of encoder blocks. One of [12, 8, 6, 4, 2] need to be given. A pre-trained MethylBERT model is downloaded accordingly. Ignored when -p (--pretrain) is given.")
+	parser.add_argument("--without_pretrain", type=bool, default=False, action="store_true", help="Use MethylBERT without a pre-trained model.")
 	
 	# Hyperparams for input data processing
 	parser.add_argument("-nm", "--n_mers", type=int, default=3, help="n-mers (default: 3)")
@@ -92,12 +93,6 @@ def preprocess_finetune_arg_parser(subparsers):
 	parser.add_argument("--ignore_sex_chromo", type=bool, default=True, help="Whether DMRs at sex chromosomes (chrX and chrY) will be ignored (default: True)")
 
 def run_finetune(args):
-	# Set up pre-trained model
-	if ( args.pretrain is None ) and ( args.n_encoder is None ):
-		raise ValueError("Either -p (--pretrain) or -l (--n_encoder) need to be given to find a pre-trained model.")
-	elif args.pretrain is None:
-		print(f"Pre-trained MethylBERT model for {args.n_encoder} encoder blocks is selected.")
-		args.pretrain = f"hanyangii/methylbert_hg19_{args.n_encoder}l"
 
 	with open(args.output_path+"/train_param.txt", "w") as f_param:
 		dict_args = vars(args)
@@ -160,8 +155,21 @@ def run_finetune(args):
 						  save_freq=args.save_freq, 
 						  loss=args.loss)
 
-	# Load pre-trained model
-	trainer.load(args.pretrain)
+	if not args.without_pretrain:
+		# Set up pre-trained model
+		if ( args.pretrain is None ) and ( args.n_encoder is None ):
+			raise ValueError("Either -p (--pretrain) or -l (--n_encoder) need to be given to find a pre-trained model.")
+		elif args.pretrain is None:
+			print(f"Pre-trained MethylBERT model for {args.n_encoder} encoder blocks is selected.")
+			args.pretrain = f"hanyangii/methylbert_hg19_{args.n_encoder}l"
+
+		# Load pre-trained model
+		trainer.load(args.pretrain)
+	else:
+		# Download the config file for the given n_encoder
+		if args.n_encoder is None:
+			raise ValueError("Please give the number of BERT encoder blocks to use with -l option")
+		trainer.create_model(config_file=f"hanyangii/methylbert_hg19_{args.n_encoder}l")
 	
 	# Fine-tune
 	print("Training Start")
