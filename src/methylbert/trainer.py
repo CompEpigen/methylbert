@@ -372,7 +372,6 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
         '''
 
         print(self.model)
-        print(self.classification_model)
 
     def create_model(self, config_file: str = None):
         '''
