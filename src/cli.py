@@ -206,11 +206,16 @@ def run_deconvolute(args):
 										train_dataloader=data_loader, 
 										test_dataloader=data_loader
 										)
-
+	
 	df_train = pd.read_csv(params["train_dataset"], sep="\t")
+	n_dmrs = max(len(df_train["dmr_label"].unique()), 
+				 df_train["dmr_label"].max()+1 # same as 'def num_dmrs()' in data/dataset.py 
+				 )
+
 	trainer.load(restore_dir, 
 				 load_fine_tune=True, 
-				 n_dmrs=len(df_train["dmr_label"].unique()))
+				 n_dmrs=int(n_dmrs) # transformer from_pretrained does not accept np.int
+				 )
 	print("Trained model (%s) is restored"%restore_dir)
 	# Calculate margins
 	
