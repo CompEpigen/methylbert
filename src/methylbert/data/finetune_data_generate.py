@@ -164,7 +164,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         return pd.concat(seqs, ignore_index=True)
     else:
         warnings.warn(f"Zero reads were extracted from {bam_file_path}")
-
+        return pd.DataFrame([])
 
 def finetune_data_generate(
         f_dmr: str,
@@ -306,7 +306,7 @@ def finetune_data_generate(
 
         if(extracted_reads.shape[0] > 0):
             filename = os.path.basename(f_sc_bam)
-            files_lbl_map[filename] = f_sc[1]
+            files_lbl_map[filename] = f_sc[1]  # label of the file
             extracted_reads["filename"] = filename
             df_reads.append(extracted_reads)
 

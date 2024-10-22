@@ -269,11 +269,12 @@ class MethylBertFinetuneDataset(MethylBertDataset):
 		self.lines = self.lines[:n_seq]
 
 	def __getitem__(self, index):
+		line = deepcopy(self.lines[index])
+
 		item = _line2tokens_finetune(
-			l=self.lines[index],
+			l=line,
 			tokenizer=self.vocab, max_len=self.seq_len, headers=self.headers)
 
-		# item = deepcopy(self.lines[index])
 		item["dna_seq"] = torch.squeeze(torch.tensor(np.array(item["dna_seq"], dtype=np.int32)))
 		item["methyl_seq"] = torch.squeeze(torch.tensor(np.array(item["methyl_seq"], dtype=np.int8)))
 
