@@ -268,7 +268,6 @@ class MethylBertPretrainTrainer(MethylBertTrainer):
         local_step = 0
 
         epochs = steps // (len(data_loader) // self._config.gradient_accumulation_steps) + 1
-        print("Epochs:", epochs)
         self.model.zero_grad()
         self.model.train()
         train_prediction_res = {"prediction":[], "label":[]}
@@ -497,12 +496,10 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
 
         duration = 0
         epoch_progress_bar = tqdm(total=epochs, desc="Training...")
-        epoch_loss = 0
         for epoch in range(epochs):
             steps_progress_bar = tqdm(total=min(steps, len(data_loader)),
                                       desc=f"Epoch {epoch+1}/{epochs}")
             for i, batch in enumerate(data_loader):
-                step_start = time.time()
                 # 0. batch_data will be sent into the device(GPU or cpu)
                 data = {key: value.to(self.device) for key, value in batch.items() if type(value) != list}
 
@@ -532,7 +529,6 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
 
                 loss_val = loss.item()
                 global_step_loss += loss_val
-                epoch_loss += loss_val
 
                 duration += time.time() - start
                 # Gradient accumulation
@@ -595,8 +591,6 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                     del train_prediction_res
                     train_prediction_res =  {"dmr_label":[], "pred_ctype_label":[], "ctype_label":[]}
 
-                step_duration = time.time() - step_start
-
                 self.step += 1
                 duration=0
                 global_step_loss = 0
@@ -609,9 +603,7 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
 
             steps_progress_bar.close()
             epoch_progress_bar.update()
-            avg_epoch_loss  = epoch_loss / len(data_loader)
 
-            epoch_loss = 0
             if steps == self.step:
                 break
 

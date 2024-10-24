@@ -42,7 +42,7 @@ def process_bismark_read(ref_seq, read):
 		# XM tag stores cytosine methyl patterns in bismark
 		xm_tag = read.get_tag("XM")
 	except KeyError:
-		# print("no methylation call for read", read.reference_id )
+		# no methylation call for read (check it with read.reference_id)
 		return None
 
 	# No CpG methylation on the read

@@ -1,12 +1,9 @@
-import argparse
-import glob
+
 import multiprocessing as mp
 import os
-import pickle
 import random
 import re
 import sys
-import time
 import uuid
 import warnings
 from functools import partial
@@ -16,7 +13,6 @@ import numpy as np
 import pandas as pd
 import pysam
 from Bio import SeqIO
-from pysam import AlignedSegment
 from sklearn.model_selection import train_test_split
 from tqdm.auto import tqdm
 
