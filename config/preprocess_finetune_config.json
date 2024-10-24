@@ -1,0 +1,14 @@
+{
+"sc_dataset": null, 
+"input_file": "data/bulk.bam", 
+"f_dmr": "data/dmrs.csv", 
+"output_dir": "res/", 
+"f_ref": "data/genome.fa", 
+"n_mers": 3, 
+"methylcaller": "bismark", 
+"split_ratio": 0.8, 
+"n_dmrs": -1, 
+"n_cores": 50, 
+"seed": 950410, 
+"ignore_sex_chromo": true
+}

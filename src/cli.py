@@ -38,7 +38,8 @@ def finetune_arg_parser(subparsers):
 
 	# For a pre-trained model
 	parser.add_argument("-p", "--pretrain", type=str, default=None, help="path to the saved pretrained model to restore")
-	parser.add_argument("-l", "--n_encoder", type=int, default=None, help="number of encoder blocks. One of [12, 8, 6] need to be given. A pre-trained MethylBERT model is downloaded accordingly. Ignored when -p (--pretrain) is given.")
+	parser.add_argument("-l", "--n_encoder", type=int, default=None, help="number of encoder blocks. One of [12, 8, 6, 4, 2] need to be given. A pre-trained MethylBERT model is downloaded accordingly. Ignored when -p (--pretrain) is given.")
+	parser.add_argument("--without_pretrain", default=False, action="store_true", help="Use MethylBERT without a pre-trained model.")
 	
 	# Hyperparams for input data processing
 	parser.add_argument("-nm", "--n_mers", type=int, default=3, help="n-mers (default: 3)")
@@ -60,7 +61,7 @@ def finetune_arg_parser(subparsers):
 	parser.add_argument("--save_freq", type=int, default=None, help="Steps to save the interim model")
 	parser.add_argument("-w", "--num_workers", type=int, default=20, help="dataloader worker size (default: 20)")
 
-	parser.add_argument("--with_cuda", type=bool, default=True, help="training with CUDA: true, or false (default: True)")
+	parser.add_argument("--with_cuda", default=False, action="store_true", help="training with CUDA (GPU)")
 	parser.add_argument("--log_freq", type=int, default=100, help="Frequency (steps) to print the loss values (default: 100)")
 	parser.add_argument("--eval_freq", type=int, default=10, help="Evaluate the model every n iter (default: 10)")
 	parser.add_argument("--lr", type=float, default=4e-4, help="learning rate of adamW (default: 4e-4)")
@@ -92,12 +93,6 @@ def preprocess_finetune_arg_parser(subparsers):
 	parser.add_argument("--ignore_sex_chromo", type=bool, default=True, help="Whether DMRs at sex chromosomes (chrX and chrY) will be ignored (default: True)")
 
 def run_finetune(args):
-	# Set up pre-trained model
-	if ( args.pretrain is None ) and ( args.n_encoder is None ):
-		raise ValueError("Either -p (--pretrain) or -l (--n_encoder) need to be given to find a pre-trained model.")
-	elif args.pretrain is None:
-		print(f"Pre-trained MethylBERT model for {args.n_encoder} encoder blocks is selected.")
-		args.pretrain = f"hanyangii/methylbert_hg19_{args.n_encoder}l"
 
 	with open(args.output_path+"/train_param.txt", "w") as f_param:
 		dict_args = vars(args)
@@ -160,8 +155,21 @@ def run_finetune(args):
 						  save_freq=args.save_freq, 
 						  loss=args.loss)
 
-	# Load pre-trained model
-	trainer.load(args.pretrain)
+	if not args.without_pretrain:
+		# Set up pre-trained model
+		if ( args.pretrain is None ) and ( args.n_encoder is None ):
+			raise ValueError("Either -p (--pretrain) or -l (--n_encoder) need to be given to find a pre-trained model.")
+		elif args.pretrain is None:
+			print(f"Pre-trained MethylBERT model for {args.n_encoder} encoder blocks is selected.")
+			args.pretrain = f"hanyangii/methylbert_hg19_{args.n_encoder}l"
+
+		# Load pre-trained model
+		trainer.load(args.pretrain)
+	else:
+		# Download the config file for the given n_encoder
+		if args.n_encoder is None:
+			raise ValueError("Please give the number of BERT encoder blocks to use with -l option")
+		trainer.create_model(config_file=f"hanyangii/methylbert_hg19_{args.n_encoder}l")
 	
 	# Fine-tune
 	print("Training Start")
@@ -196,13 +204,21 @@ def run_deconvolute(args):
 	restore_dir = os.path.join(args.model_dir, "bert.model/")
 	trainer = MethylBertFinetuneTrainer(len(tokenizer), save_path='./test',
 										train_dataloader=data_loader, 
-										test_dataloader=data_loader,
+										test_dataloader=data_loader
 										)
-	trainer.load(restore_dir, load_fine_tune=True)
+	
+	df_train = pd.read_csv(params["train_dataset"], sep="\t")
+	n_dmrs = max(len(df_train["dmr_label"].unique()), 
+				 df_train["dmr_label"].max()+1 # same as 'def num_dmrs()' in data/dataset.py 
+				 )
+
+	trainer.load(restore_dir, 
+				 load_fine_tune=True, 
+				 n_dmrs=int(n_dmrs) # transformer from_pretrained does not accept np.int
+				 )
 	print("Trained model (%s) is restored"%restore_dir)
 	# Calculate margins
-	df_train = pd.read_csv(params["train_dataset"], sep="\t")
-
+	
 	deconvolute(trainer = trainer, 
 			data_loader = data_loader, 
 			df_train = df_train, 
@@ -249,7 +265,7 @@ def main(args=None):
 		with open(f_config, "r") as fp:
 			config_dict = json.load(fp)
 		args = argparse.Namespace(**config_dict)
-
+	
 	if selected_option == "preprocess_finetune":
 		if args is None:
 			preprocess_finetune_arg_parser(subparsers)

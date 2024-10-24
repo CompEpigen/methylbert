@@ -48,7 +48,7 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
         self.dmr_encoder = nn.Sequential(
             nn.Embedding(num_embeddings=self.num_labels, embedding_dim = seq_len+1),
         )
-
+        
         self.init_weights()
 
     def _setup_loss(self, loss):

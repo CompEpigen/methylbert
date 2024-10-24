@@ -138,7 +138,7 @@ def process_dorado_read(ref_seq, read):
 		return None
 
 	# Get modified bases indicationg methylation
-	methyl_seq = [2 for i in range(len(read_seq))]
+	methyl_seq = [2 if ref_seq[i:i+2] != "CG" else 0 for i in range(len(read.get_forward_sequence())-1)]
 	modified_bases = read.modified_bases.copy() # the instance of read cannot be modified
 	ch_key, cm_key = ('C', int(read.is_reverse), 'h'), ('C', int(read.is_reverse), 'm')
 
@@ -167,8 +167,6 @@ def process_dorado_read(ref_seq, read):
 		methyl_seq[cg_idx] = methyl_pattern
 
 	methyl_seq = "".join(list(map(str, methyl_seq)))
-
-	original_methyl = methyl_seq
 	# Handle cigar strings
 	methyl_seq = handling_cigar(methyl_seq, read.cigarstring)
 

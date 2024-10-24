@@ -30,7 +30,8 @@ def test_multi_cell_type(trainer, tokenizer, data_loader, output_path, df_train)
 if __name__=="__main__":
 	f_bulk = "data/processed/test_seq.csv"
 	f_train = "data/processed/train_seq.csv"
-	model_dir = "res/bert.model/"
+	model_dir="res/"
+	#model_dir = "tmp/bert.model/"
 	out_dir = "res/deconvolution/"
 
 	tokenizer = MethylVocab(k=3)

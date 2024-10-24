@@ -21,6 +21,7 @@ from methylbert.data.vocab import MethylVocab
 from methylbert.network import MethylBertEmbeddedDMR
 from methylbert.utils import get_dna_seq
 
+torch.set_warn_always(False) # one warning per process
 
 def learning_rate_scheduler(optimizer, num_warmup_steps: int, num_training_steps: int, decrease_steps: int):
     """
@@ -51,13 +52,19 @@ def learning_rate_scheduler(optimizer, num_warmup_steps: int, num_training_steps
 
 
 class MethylBertTrainer(object):
-    def __init__(self, vocab_size: int, save_path: str = "",
-                 train_dataloader: DataLoader = None, test_dataloader: DataLoader = None,
+    def __init__(self,
+                 vocab_size: int,
+                 save_path: str = "",
+                 train_dataloader: DataLoader = None,
+                 test_dataloader: DataLoader = None,
                  **kwargs):
 
         # Setup config
         self._config = get_config(**kwargs)
+
+        # Setup dataloader
         self.train_data = train_dataloader
+        self.test_data = test_dataloader
 
         # Setup cuda device for BERT training, argument -c, --cuda should be true
         self._config.amp = torch.cuda.is_available() and self._config.with_cuda
@@ -66,8 +73,6 @@ class MethylBertTrainer(object):
             self._config.with_cuda = False
         print("The model is loaded on %s"%("GPU" if self._config.with_cuda else "CPU"))
         self.device = torch.device("cuda:0" if self._config.with_cuda else "cpu")
-
-        self.test_data = test_dataloader
 
         # To save the best model
         self.min_loss = np.inf
@@ -372,7 +377,6 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
         '''
 
         print(self.model)
-        print(self.classification_model)
 
     def create_model(self, config_file: str = None):
         '''
@@ -640,13 +644,17 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
         print(f"Restore the pretrained model {dir_path}")
 
         if load_fine_tune:
+            '''
             if n_dmrs is not None:
                 raise ValueError("You cannot give a new number of DMRs for loading a fine-tuned model. The model should contains one. Please set either n_dmrs=None or load_fine_tune=False")
+            '''
+
             self.bert = MethylBertEmbeddedDMR.from_pretrained(dir_path,
-                output_attentions=True,
+				output_attentions=True,
                 output_hidden_states=True,
                 seq_len = self.train_data.dataset.seq_len,
-                loss=self._config.loss
+                loss=self._config.loss,
+                num_labels=n_dmrs
                 )
 
             try:

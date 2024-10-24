@@ -14,12 +14,12 @@ Yunhee Jeong, Karl Rohr, Pavlo Lutsik,
 bioRxiv 2023.10.29.564590; doi: https://doi.org/10.1101/2023.10.29.564590
 
 ## Installation
-_MethylBERT_ runs most stably with __Python=3.7__
+_MethylBERT_ runs most stably with __Python=3.9__
 
 ### Pip Installation
 _MethylBERT_ is available as a [python package](https://pypi.org/project/methylbert/).
 ```
-conda create -n methylbert -c conda-forge python=3.11 cudatoolkit==11.8 pip
+conda create -n methylbert -c conda-forge python=3.11 cudatoolkit==11.8 pip freetype-py
 conda activate methylbert
 pip install methylbert
 ```
@@ -28,7 +28,7 @@ pip install methylbert
 You can set up your conda environment with the `environment.yml` file by
  running `conda env create --file environment.yml` or instead:
 ```
-conda create -n methylbert -c conda-forge python=3.11 cudatoolkit==11.8 pip
+conda create -n methylbert -c conda-forge python=3.11 cudatoolkit==11.8 pip freetype-py
 conda activate methylbert
 git clone https://github.com/hanyangii/methylbert.git
 cd methylbert
@@ -43,71 +43,41 @@ If you want to use _MethylBERT_ as a python library, please follow the [tutorial
 MethylBERT supports a command line tool. Before using the command line tool, please check [the input file requirements](https://github.com/hanyangii/methylbert/blob/main/tutorials/01_Data_Preparation.md)
 ```
 > methylbert
-MethylBERT v0.0.2
+MethylBERT v2.0.1
 One option must be given from ['preprocess_finetune', 'finetune', 'deconvolute']
 ```
-#### 1. Data Preprocessing to fine-tune MethylBERT
-```
-> methylbert preprocess_finetune --help
-MethylBERT v0.0.2
-usage: methylbert preprocess_finetune [-h] [-s SC_DATASET] [-f INPUT_FILE] -d
-                                      F_DMR -o OUTPUT_DIR -r F_REF
-                                      [-nm N_MERS] [-p SPLIT_RATIO]
-                                      [-nd N_DMRS] [-c N_CORES] [--seed SEED]
-                                      [--ignore_sex_chromo IGNORE_SEX_CHROMO]
+`-h` or `--help` provides available arguments for each function. (e.g., `methylbert preprocess_finetune --help`)
 
-optional arguments:
-  -h, --help            show this help message and exit
+#### 1. Data Preprocessing to fine-tune MethylBERT
+**e.g.)** `methylbert preprocess_finetune -f bulk.bam -d dmrs.csv -r genome.fa -p 0.8 -c 50 -o data/`
+```
   -s SC_DATASET, --sc_dataset SC_DATASET
-                        a file all single-cell bam files are listed up. The
-                        first and second columns must indicate file names and
-                        cell types if cell types are given. Otherwise, each
-                        line must have one file path.
+                        a file all single-cell bam files are listed up. The first and second columns must indicate file names and cell types if cell types are given. Otherwise, each line must have one file path.
   -f INPUT_FILE, --input_file INPUT_FILE
                         .bam file to be processed
   -d F_DMR, --f_dmr F_DMR
                         .bed or .csv file DMRs information is contained
-  -o OUTPUT_DIR, --output_dir OUTPUT_DIR
+  -o OUTPUT_PATH, --output_path OUTPUT_PATH
                         a directory where all generated results will be saved
   -r F_REF, --f_ref F_REF
                         .fasta file containing reference genome
   -nm N_MERS, --n_mers N_MERS
                         K for K-mer sequences (default: 3)
+  -m METHYLCALLER, --methylcaller METHYLCALLER
+                        Used methylation caller. It must be either bismark or dorado (default: bismark)
   -p SPLIT_RATIO, --split_ratio SPLIT_RATIO
-                        the ratio between train and test dataset (default:
-                        0.8)
+                        the ratio between train and test dataset (default: 0.8)
   -nd N_DMRS, --n_dmrs N_DMRS
-                        Number of DMRs to take from the dmr file. If the value
-                        is not given, all DMRs will be used
+                        Number of DMRs to take from the dmr file. If the value is not given, all DMRs will be used
   -c N_CORES, --n_cores N_CORES
                         number of cores for the multiprocessing (default: 1)
   --seed SEED           random seed number (default: 950410)
   --ignore_sex_chromo IGNORE_SEX_CHROMO
-                        Whether DMRs at sex chromosomes (chrX and chrY) will
-                        be ignored (default: True)
-
+                        Whether DMRs at sex chromosomes (chrX and chrY) will be ignored (default: True)
 ```
 #### 2. MethylBERT fine-tuning
+**e.g.)** `methylbert finetune -c data/train_seq.csv -t data/test_seq.csv -o model/ -l 12 -s 150 -b 256 --gradient_accumulation_steps 4 -e 600 -w 8 --log_freq 1 --eval_freq 1 --warm_up 1 --lr 1e-4 --decrease_steps 200`
 ```
-> methylbert finetune --help
-MethylBERT v0.0.2
-usage: methylbert finetune [-h] -c TRAIN_DATASET [-t TEST_DATASET] -o
-                           OUTPUT_PATH [-p PRETRAIN] [-l N_ENCODER]
-                           [-nm N_MERS] [-s SEQ_LEN] [-b BATCH_SIZE]
-                           [--valid_batch VALID_BATCH]
-                           [--corpus_lines CORPUS_LINES]
-                           [--max_grad_norm MAX_GRAD_NORM]
-                           [--gradient_accumulation_steps GRADIENT_ACCUMULATION_STEPS]
-                           [-e STEPS] [--save_freq SAVE_FREQ] [-w NUM_WORKERS]
-                           [--with_cuda WITH_CUDA] [--log_freq LOG_FREQ]
-                           [--eval_freq EVAL_FREQ] [--lr LR]
-                           [--adam_weight_decay ADAM_WEIGHT_DECAY]
-                           [--adam_beta1 ADAM_BETA1] [--adam_beta2 ADAM_BETA2]
-                           [--warm_up WARM_UP]
-                           [--decrease_steps DECREASE_STEPS] [--seed SEED]
-
-optional arguments:
-  -h, --help            show this help message and exit
   -c TRAIN_DATASET, --train_dataset TRAIN_DATASET
                         train dataset for train bert
   -t TEST_DATASET, --test_dataset TEST_DATASET
@@ -117,9 +87,7 @@ optional arguments:
   -p PRETRAIN, --pretrain PRETRAIN
                         path to the saved pretrained model to restore
   -l N_ENCODER, --n_encoder N_ENCODER
-                        number of encoder blocks. One of [12, 8, 6] need to be
-                        given. A pre-trained MethylBERT model is downloaded
-                        accordingly. Ignored when -p (--pretrain) is given.
+                        number of encoder blocks. One of [12, 8, 6] need to be given. A pre-trained MethylBERT model is downloaded accordingly. Ignored when -p (--pretrain) is given.
   -nm N_MERS, --n_mers N_MERS
                         n-mers (default: 3)
   -s SEQ_LEN, --seq_len SEQ_LEN
@@ -127,16 +95,14 @@ optional arguments:
   -b BATCH_SIZE, --batch_size BATCH_SIZE
                         number of batch_size (default: 50)
   --valid_batch VALID_BATCH
-                        number of batch_size in valid set. If it's not given,
-                        valid_set batch size is set same as the train_set
-                        batch size
+                        number of batch_size in valid set. If it's not given, valid_set batch size is set same as the train_set batch size
   --corpus_lines CORPUS_LINES
                         total number of lines in corpus
+  --loss LOSS           Loss function for fine-tuning. It can be either 'bce' or 'focal_bce' (default: bce)
   --max_grad_norm MAX_GRAD_NORM
                         Max gradient norm (default: 1.0)
   --gradient_accumulation_steps GRADIENT_ACCUMULATION_STEPS
-                        Number of updates steps to accumulate before
-                        performing a backward/update pass. (default: 1)
+                        Number of updates steps to accumulate before performing a backward/update pass. (default: 1)
   -e STEPS, --steps STEPS
                         number of training steps (default: 600)
   --save_freq SAVE_FREQ
@@ -145,8 +111,7 @@ optional arguments:
                         dataloader worker size (default: 20)
   --with_cuda WITH_CUDA
                         training with CUDA: true, or false (default: True)
-  --log_freq LOG_FREQ   Frequency (steps) to print the loss values (default:
-                        100)
+  --log_freq LOG_FREQ   Frequency (steps) to print the loss values (default: 100)
   --eval_freq EVAL_FREQ
                         Evaluate the model every n iter (default: 10)
   --lr LR               learning rate of adamW (default: 4e-4)
@@ -162,14 +127,8 @@ optional arguments:
   --seed SEED           seed number (default: 950410)
 ```
 #### 3. MethylBERT tumour deconvolution
+**e.g.)** `methylbert deconvolute -i data/data.txt -m model/ -o res/ -b 128 --adjustment`
 ```
-> methylbert deconvolute --help
-MethylBERT v0.0.2
-usage: methylbert deconvolute [-h] -i INPUT_DATA -m MODEL_DIR [-o OUTPUT_PATH]
-                              [-b BATCH_SIZE] [--save_logit] [--adjustment]
-
-optional arguments:
-  -h, --help            show this help message and exit
   -i INPUT_DATA, --input_data INPUT_DATA
                         Bulk data to deconvolute
   -m MODEL_DIR, --model_dir MODEL_DIR
@@ -177,19 +136,21 @@ optional arguments:
   -o OUTPUT_PATH, --output_path OUTPUT_PATH
                         Directory to save deconvolution results. (default: ./)
   -b BATCH_SIZE, --batch_size BATCH_SIZE
-                        Batch size. Please decrease the number if you do not
-                        have enough memory to run the software (default: 64)
+                        Batch size. Please decrease the number if you do not have enough memory to run the software (default: 64)
   --save_logit          Save logits from the model (default: False)
   --adjustment          Adjust the estimated tumour purity (default: False)
 ```
 ## Citation
 ```
-@article{jeong2023methylbert,
-  title={MethylBERT: A Transformer-based model for read-level DNA methylation pattern identification and tumour deconvolution},
-  author={Jeong, Yunhee and Rohr, Karl and Lutsik, Pavlo},
-  journal={bioRxiv},
-  pages={2023--10},
-  year={2023},
-  publisher={Cold Spring Harbor Laboratory}
+@article {Jeong2023methyl,
+	author = {Jeong, Yunhee and Gerh{\"a}user, Clarissa and Sauter, Guido and Schlomm, Thorsten and Rohr, Karl and Lutsik, Pavlo},
+	title = {MethylBERT: A Transformer-based model for read-level DNA methylation pattern identification and tumour deconvolution},
+	elocation-id = {2023.10.29.564590},
+	year = {2024},
+	doi = {10.1101/2023.10.29.564590},
+	publisher = {Cold Spring Harbor Laboratory},
+	URL = {https://www.biorxiv.org/content/early/2024/08/29/2023.10.29.564590},
+	eprint = {https://www.biorxiv.org/content/early/2024/08/29/2023.10.29.564590.full.pdf},
+	journal = {bioRxiv}
 }
 ```
