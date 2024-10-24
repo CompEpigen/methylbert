@@ -2,7 +2,6 @@ import os
 import time
 import warnings
 
-import mlflow
 import numpy as np
 import pandas as pd
 import torch
@@ -109,16 +108,14 @@ class MethylBertTrainer(object):
             self.optim = AdamW(self.model.parameters(),
                                lr=self._config.lr, betas=self._config.beta, eps=self._config.eps, weight_decay=self._config.weight_decay)
 
-
-    def train(self, steps: int = 0, verbose: int = 1,
-              mlflow_logging: bool = True):
+    def train(self, steps: int = 0, verbose: int = 1):
         '''
         Train MethylBERT over given steps
 
         steps: int
             number of steps to train the model
         '''
-        return self._iteration(steps, self.train_data, verbose, mlflow_logging)
+        return self._iteration(steps, self.train_data, verbose)
 
     def test(self, test_dataloader: DataLoader):
         '''
@@ -228,7 +225,7 @@ class MethylBertPretrainTrainer(MethylBertTrainer):
         return predict_res, np.mean(mean_loss)
 
 
-    def _iteration(self, steps, data_loader, verbose, mlflow_logging):
+    def _iteration(self, steps, data_loader, verbose):
         """
         loop over the data_loader for training or testing
         if on train status, backward operation is activated
@@ -447,11 +444,9 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
         else:
             return predict_res, mean_loss, np.concatenate(return_logits, axis=0)
 
-    def _log_to_mlflow(self, metrics: dict, step: int):
-        mlflow.log_metrics(metrics, step)
 
-    def _iteration(self, steps, data_loader, verbose = 1,
-                   mlflow_logging: bool = True):
+
+    def _iteration(self, steps, data_loader, verbose = 1):
         """
         loop over the data_loader for training or testing
         if on train status, backward operation is activated
@@ -534,7 +529,6 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                 loss_val = loss.item()
                 global_step_loss += loss_val
                 epoch_loss += loss_val
-                self._log_to_mlflow({"train_loss": loss}, self.step + (epoch * len(data_loader )) + 1)
 
                 duration += time.time() - start
                 # Gradient accumulation
@@ -592,23 +586,12 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
 
                         f_perform.write("\t".join([str(self.step), str(global_step_loss), str(train_ctype_acc),  str(self.optim.param_groups[0]["lr"])])+"\n")
 
-                    if mlflow_logging:
-                        metrics = {
-                            "lr": self.optim.param_groups[0]["lr"],
-                            "eval_loss": eval_loss,
-                            "eval_acc": eval_acc,
-                            "duration": duration,
-                        }
-                        self._log_to_mlflow(metrics, self.step + (epoch * len(data_loader) + 1))
-
                     steps_progress_bar.set_postfix(eval_loss=eval_loss)
                     # Reset prediction result
                     del train_prediction_res
                     train_prediction_res =  {"dmr_label":[], "pred_ctype_label":[], "ctype_label":[]}
 
                 step_duration = time.time() - step_start
-
-                self._log_to_mlflow({"step_duration": step_duration}, self.step + (epoch * len(data_loader) + 1))
 
                 self.step += 1
                 duration=0
@@ -623,7 +606,7 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
             steps_progress_bar.close()
             epoch_progress_bar.update()
             avg_epoch_loss  = epoch_loss / len(data_loader)
-            self._log_to_mlflow({"avg_epoch_loss ": avg_epoch_loss}, epoch + 1)
+
             epoch_loss = 0
             if steps == self.step:
                 break
