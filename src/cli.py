@@ -39,7 +39,7 @@ def finetune_arg_parser(subparsers):
 	# For a pre-trained model
 	parser.add_argument("-p", "--pretrain", type=str, default=None, help="path to the saved pretrained model to restore")
 	parser.add_argument("-l", "--n_encoder", type=int, default=None, help="number of encoder blocks. One of [12, 8, 6, 4, 2] need to be given. A pre-trained MethylBERT model is downloaded accordingly. Ignored when -p (--pretrain) is given.")
-	parser.add_argument("--without_pretrain", type=bool, default=False, action="store_true", help="Use MethylBERT without a pre-trained model.")
+	parser.add_argument("--without_pretrain", default=False, action="store_true", help="Use MethylBERT without a pre-trained model.")
 	
 	# Hyperparams for input data processing
 	parser.add_argument("-nm", "--n_mers", type=int, default=3, help="n-mers (default: 3)")
@@ -61,7 +61,7 @@ def finetune_arg_parser(subparsers):
 	parser.add_argument("--save_freq", type=int, default=None, help="Steps to save the interim model")
 	parser.add_argument("-w", "--num_workers", type=int, default=20, help="dataloader worker size (default: 20)")
 
-	parser.add_argument("--with_cuda", type=bool, default=True, help="training with CUDA: true, or false (default: True)")
+	parser.add_argument("--with_cuda", default=False, action="store_true", help="training with CUDA (GPU)")
 	parser.add_argument("--log_freq", type=int, default=100, help="Frequency (steps) to print the loss values (default: 100)")
 	parser.add_argument("--eval_freq", type=int, default=10, help="Evaluate the model every n iter (default: 10)")
 	parser.add_argument("--lr", type=float, default=4e-4, help="learning rate of adamW (default: 4e-4)")
