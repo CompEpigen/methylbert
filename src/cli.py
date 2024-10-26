@@ -15,6 +15,12 @@ from methylbert import __version__
 import torch
 from torch.utils.data import DataLoader
 
+OPTIONS = [
+	"preprocess_finetune", 
+	"finetune", 
+	"deconvolute"
+]
+
 def deconvolute_arg_parser(subparsers):
 	parser = subparsers.add_parser('deconvolute', help='Run MethylBERT tumour deconvolution')
 
@@ -247,16 +253,40 @@ def write_args2json(args, f_out):
 	with open(f_out, "w") as fp:
 		json.dump(vars(args), fp)
 
-def main(args=None):
-	print(f"MethylBERT v{__version__}")
-	options = ["preprocess_finetune", "finetune", "deconvolute"]
+def get_args(func):
+	'''
+	get a set of arguments for each MethylBERT function 
+	'''
 	
-	if len(sys.argv) == 1:
-		print(f"One option must be given from {options}")
-		exit()
-
+	# init
 	parser_init = argparse.ArgumentParser("methylbert")
 	subparsers = parser_init.add_subparsers(help="Options for MethylBERT")
+	
+	# get args
+	if func == "preprocess_finetune":
+		preprocess_finetune_arg_parser(subparsers)
+	elif func == "finetune":
+		finetune_arg_parser(subparsers)
+	elif func == "deconvolute":
+		deconvolute_arg_parser(subparsers)
+	else:
+		raise ValueError(f"{func} must be one of {OPTIONS}")
+
+	# parse
+	args = parser_init.parse_args()
+	
+	# output configuration in a .json file
+	if not os.path.exists(args.output_path):
+		os.mkdir(args.output_path)
+	write_args2json(args, os.path.join(args.output_path, f"{func}_config.json"))
+
+def main(args=None):
+	print(f"MethylBERT v{__version__}")
+	
+	if len(sys.argv) == 1:
+		print(f"One option must be given from {OPTIONS}")
+		exit()
+
 	selected_option =  sys.argv[1]
 
 	# Configuration file is given
@@ -265,30 +295,13 @@ def main(args=None):
 		with open(f_config, "r") as fp:
 			config_dict = json.load(fp)
 		args = argparse.Namespace(**config_dict)
+	else:
+		get_args(selected_option)
 	
+	# Run the function
 	if selected_option == "preprocess_finetune":
-		if args is None:
-			preprocess_finetune_arg_parser(subparsers)
-			args = parser_init.parse_args()
-			if not os.path.exists(args.output_path):
-				os.mkdir(args.output_path)
-			write_args2json(args, os.path.join(args.output_path, "preprocess_finetune_config.json"))
 		run_preprocess(args)
 	elif selected_option == "finetune":
-		if args is None:		
-			finetune_arg_parser(subparsers)
-			args = parser_init.parse_args()
-			if not os.path.exists(args.output_path):
-				os.mkdir(args.output_path)
-			write_args2json(args, os.path.join(args.output_path, "finetune_config.json"))
 		run_finetune(args)
 	elif selected_option == "deconvolute":
-		if args is None:		
-			deconvolute_arg_parser(subparsers)
-			args = parser_init.parse_args()
-			if not os.path.exists(args.output_path):
-				os.mkdir(args.output_path)
-			write_args2json(args, os.path.join(args.output_path, "deconvolute_config.json"))
 		run_deconvolute(args)
-	else:
-		print(f"The option must be chosen in {options}")
