@@ -96,7 +96,7 @@ def preprocess_finetune_arg_parser(subparsers):
 	parser.add_argument("-nd", "--n_dmrs", type=int, default=-1, help="Number of DMRs to take from the dmr file. If the value is not given, all DMRs will be used")
 	parser.add_argument("-c", "--n_cores", type=int, default=1, help="number of cores for the multiprocessing (default: 1)")
 	parser.add_argument("--seed", type=int, default=950410, help="random seed number (default: 950410)")
-	parser.add_argument("--ignore_sex_chromo", type=bool, default=True, help="Whether DMRs at sex chromosomes (chrX and chrY) will be ignored (default: True)")
+	parser.add_argument("--ignore_sex_chromo", default=False, action="store_true", help="Whether DMRs at sex chromosomes (chrX and chrY) will be ignored")
 
 def run_finetune(args):
 
@@ -272,13 +272,31 @@ def get_args(func):
 	else:
 		raise ValueError(f"{func} must be one of {OPTIONS}")
 
-	# parse
-	args = parser_init.parse_args()
+	# Configuration file is given
+	if (len(sys.argv) >= 3) and (".json" in sys.argv[2]):
+		f_config = sys.argv[2]
+		with open(f_config, "r") as fp:
+			config_dict = json.load(fp)
+
+		args = [func]
+		for k, v in config_dict.items():
+			if ( type(v) == bool ) and (v):
+				args.append(f"--{k}")
+			elif v is not None:
+				args.append(f"--{k}")
+				args.append(f"{v}")
+
+		args = parser_init.parse_args(args)
+	else:
+		# parse args
+		args = parser_init.parse_args()
 	
-	# output configuration in a .json file
-	if not os.path.exists(args.output_path):
-		os.mkdir(args.output_path)
-	write_args2json(args, os.path.join(args.output_path, f"{func}_config.json"))
+		# output configuration in a .json file
+		if not os.path.exists(args.output_path):
+			os.mkdir(args.output_path)
+		write_args2json(args, os.path.join(args.output_path, f"{func}_config.json"))
+
+	return args
 
 def main(args=None):
 	print(f"MethylBERT v{__version__}")
@@ -288,15 +306,7 @@ def main(args=None):
 		exit()
 
 	selected_option =  sys.argv[1]
-
-	# Configuration file is given
-	if (len(sys.argv) >= 3) and (".json" in sys.argv[2]):
-		f_config = sys.argv[2]
-		with open(f_config, "r") as fp:
-			config_dict = json.load(fp)
-		args = argparse.Namespace(**config_dict)
-	else:
-		get_args(selected_option)
+	args = get_args(selected_option)
 	
 	# Run the function
 	if selected_option == "preprocess_finetune":
