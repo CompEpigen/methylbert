@@ -1,4 +1,5 @@
 # MethylBERT: A Transformer-based model for read-level DNA methylation pattern identification and tumour deconvolution
+[![DOI](https://zenodo.org/badge/559284606.svg)](https://doi.org/10.5281/zenodo.14025051)
 
 ![methylbert_scheme](https://github.com/CompEpigen/methylbert/blob/main/img/introduction_methylbert.png)
 _The figure was generated using [biorender](https://www.biorender.com/)_
