@@ -1,4 +1,5 @@
 from collections import OrderedDict
+
 from transformers import BertConfig
 
 METHYLBERT_PRETRAINED_CONFIG_ARCHIVE_MAP = {
@@ -32,12 +33,12 @@ def get_config(**kwargs):
             ('eps', 1e-6),
             ('with_cuda', True),
             ('log_freq', 10),
-            ('eval_freq', 10),
+            ('eval_freq', 1),
             ('n_hidden', None),
             ("decrease_steps", 200),
             ('eval', False),
             ('amp', False),
-            ("gradient_accumulation_steps", 1), 
+            ("gradient_accumulation_steps", 1),
             ("max_grad_norm", 1.0),
             ("eval", False),
             ("save_freq", None),

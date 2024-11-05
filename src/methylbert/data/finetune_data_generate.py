@@ -1,16 +1,23 @@
-from .bam import process_bismark_read, process_dorado_read
-import argparse, os, uuid, sys
 
 import multiprocessing as mp
-
-import pandas as pd
-import numpy as np
-
-from functools import partial
-from Bio import SeqIO
-
-import pickle, pysam, os, glob, random, re, time
+import os
+import random
+import re
+import sys
+import uuid
 import warnings
+from functools import partial
+from typing import List, Optional
+
+import numpy as np
+import pandas as pd
+import pysam
+from Bio import SeqIO
+from sklearn.model_selection import train_test_split
+from tqdm.auto import tqdm
+
+from .bam import process_bismark_read, process_dorado_read
+
 
 # https://gist.github.com/EdwinChan/3c13d3a746bb3ec5082f
 def globalize(func):
@@ -41,7 +48,7 @@ def kmers(seq: str, k: int=3):
             m = 2
 
         # six alphabets indicating cytosine methylation in bismark processed files
-        token = re.sub("[h|H|z|Z|x|X]", "C", token) 
+        token = re.sub("[h|H|z|Z|x|X]", "C", token)
         converted_seq.append(token)
         methyl.append(str(m))
 
@@ -54,7 +61,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         and convert those into 3-mer sequences
 
         bam_file_path: (str)
-            single-cell bam file path 
+            single-cell bam file path
         dict_ref: (dict)
             Reference genome given in a dictionary whose key is chromosome and value is DNA sequences
         k: (int)
@@ -64,7 +71,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         ncores: (int)
             Number of cores to be used for parallel processing, default: 1
     '''
-    
+
     def _reads_overlapping(aln, chromo, start, end, methyl_caller="bismark"):
         '''
         seq_list = list()
@@ -83,9 +90,9 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
             # Only select fully overlapping reads
             if (read.pos  < start) or ((read.pos+read.query_alignment_length) > end):
                 continue
-            
+
             # Remove case-specific mode occured by the quality
-            ref_seq = dict_ref[chromo][read.pos:(read.pos+read.query_alignment_length)].upper() 
+            ref_seq = dict_ref[chromo][read.pos:(read.pos+read.query_alignment_length)].upper()
 
             if methyl_caller == "bismark":
                 ref_seq = process_bismark_read(ref_seq, read)
@@ -107,7 +114,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
 
             # Add processed results as a tag
             read.setTag("RF", value=" ".join(s), replace=True) # reference sequence
-            read.setTag("ME", value="".join(m), replace=True) # methylation pattern sequence 
+            read.setTag("ME", value="".join(m), replace=True) # methylation pattern sequence
 
             # Process back to a dictionary
             read_tags = {t:v for t, v in read.get_tags()}
@@ -120,7 +127,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
             processed_reads = processed_reads.drop(columns=["tags"])
 
         return processed_reads
-        
+
     @globalize
     def _get_methylseq(dmr, bam_file_path: str, k: int, methyl_caller: str):
         '''
@@ -128,7 +135,7 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
         '''
         aln = pysam.AlignmentFile(bam_file_path, "rb")
 
-        processed_reads = _reads_overlapping(aln, 
+        processed_reads = _reads_overlapping(aln,
                                              dmr["chr"], int(dmr["start"]), int(dmr["end"]),
                                              methyl_caller)
         if processed_reads.shape[0] > 0:
@@ -138,36 +145,41 @@ def read_extract(bam_file_path: str, dict_ref: dict, k: int, dmrs: pd.DataFrame,
 
     if ncores > 1:
         with mp.Pool(ncores) as pool:
-            # Convert read sequences to k-mer sequences 
-            seqs = pool.map(partial(_get_methylseq, 
+            # Convert read sequences to k-mer sequences
+            seqs = pool.map(partial(_get_methylseq,
                                     bam_file_path = bam_file_path, k=k, methyl_caller=methyl_caller),
                             dmrs.to_dict("records"))
     else:
-        seqs = [_get_methylseq(dmr, bam_file_path = bam_file_path, k=k, methyl_caller = methyl_caller) for dmr in dmrs.to_dict("records")]
-        
+        seqs = [_get_methylseq(dmr, bam_file_path = bam_file_path, k=k,
+                               methyl_caller = methyl_caller)
+                for dmr in dmrs.to_dict("records")]
+
     # Filter None values that means no overlapping read with the given DMR
     seqs = list(filter(lambda i: i is not None, seqs))
     if len(seqs) > 0:
         return pd.concat(seqs, ignore_index=True)
     else:
         warnings.warn(f"Zero reads were extracted from {bam_file_path}")
+        return pd.DataFrame([])
 
 def finetune_data_generate(
         f_dmr: str,
         output_dir: str,
         f_ref: str,
         sc_dataset: str = None,
-        input_file: str = None, 
+        input_file: str = None,
         n_mers: int = 3,
-        split_ratio: float = 1.0,
+        split_ratios: List[float] = [0.8, 0.1, 0.1],
         n_dmrs: int = -1,
         n_cores: int = 1,
         seed: int = 950410,
         ignore_sex_chromo: bool = True,
-        methyl_caller: str = "bismark"
+        methyl_caller: str = "bismark",
+        verbose: int = 2,
+        read_extract_sequences_func: Optional[callable] = None
     ):
 
-    # Setup random seed 
+    # Setup random seed
     random.seed(seed)
     np.random.seed(seed)
 
@@ -178,20 +190,20 @@ def finetune_data_generate(
 
     # Reference genome
     record_iter = SeqIO.parse(f_ref, "fasta")
-    
+
     # Save the reference genome into a dictionary with chr as a key value
     dict_ref = dict()
     for r in record_iter:
         dict_ref[str(r.id)] = str(r.seq.upper())
     del record_iter
-    
-    # Load DMRs into a data frame
+
+    # Load DMRs into a dataframe
     dmrs = pd.read_csv(f_dmr, sep="\t", index_col=None)
     if ("chr" not in dmrs.keys()) or ("start" not in dmrs.keys()) or ("end" not in dmrs.keys()):
         ValueError("The .csv file for DMRs must contain chr, start and end in the header.")
 
     # Remove chrX, chrY, chrM and so on in DMRs
-    # Genome style 
+    # Genome style
     if "chr" in str(dmrs["chr"][0]):
         regex_expr = "chr\d+" if ignore_sex_chromo else "chr[\d+|X|Y]"
         old_keys = list(dict_ref.keys())
@@ -205,25 +217,29 @@ def finetune_data_generate(
             if "chr" in k: dict_ref[k.split("chr")[1]] = dict_ref.pop(k)
 
     dmrs = dmrs[dmrs["chr"].str.contains(regex_expr, regex=True)]
-    
+
     if dmrs.shape[0] == 0:
         ValueError("Could not find any DMRs. Please make sure chromosomes have \'chr\' at the beginning.")
 
     # Sort by statistics if available
     if "areaStat" in dmrs.keys():
-        print("DMRs sorted by areaStat")
+        if verbose > 0:
+            print("DMRs sorted by areaStat")
         dmrs["abs_areaStat"]  = dmrs["areaStat"].abs()
-        dmrs = dmrs.sort_values(by="abs_areaStat", ascending=False)
+        dmrs = dmrs.sort_values(by="areaStat", ascending=False)
     elif "diff.Methy" in dmrs.keys():
-        print("DMRs sorted by diff.Methy")
+        if verbose > 0:
+            print("DMRs sorted by diff.Methy")
         dmrs["abs_diff.Methy"]  = dmrs["diff.Methy"].abs()
-        dmrs = dmrs.sort_values(by="abs_diff.Methy", ascending=False)
+        dmrs = dmrs.sort_values(by="diff.Methy", ascending=False)
     else:
-        print("Could not find any statistics to sort DMRs")
+        if verbose > 0:
+            print("Could not find any statistics to sort DMRs")
 
-    # Select top n dmrs based on 
+    # Select top n dmrs based on
     if n_dmrs > 0:
-        print(f"{n_dmrs} are selected based on the statistics")
+        if verbose > 0:
+            print(f"{n_dmrs} are selected based on the statistics")
         list_dmrs = list()
         for c in dmrs["ctype"].unique(): #  For the case when multiple cell types are given
             ctype_dmrs = dmrs[dmrs["ctype"]==c]
@@ -238,11 +254,13 @@ def finetune_data_generate(
     if "dmr_id" not in dmrs.keys():
       dmrs["dmr_id"] = range(len(dmrs))
 
-    # Save DMRs in a new file 
+    # Save DMRs in a new file
     dmrs.to_csv(fp_dmr, sep="\t", index=False)
-    print(dmrs.head())
+    if verbose > 2:
+        print(dmrs.head())
 
-    print(f"Number of DMRs to extract sequence reads: {len(dmrs)}")
+    if verbose > 0:
+        print(f"Number of DMRs to extract sequence reads: {len(dmrs)}")
 
     # check whether the input is a file or a file list
     if ( not sc_dataset ) and ( not input_file ):
@@ -257,16 +275,27 @@ def finetune_data_generate(
             sc_files = fp_sc_dataset.readlines()
     else:
         sys.exit("Either a list of input files or a file path must be given.")
-    
+
     # Collect reads from the .bam files
     df_reads = list()
+    tqdm_bar = tqdm(total=len(sc_files), desc="Collecting reads from .bam files")
+    files_lbl_map = {}
     for f_sc in sc_files:
         f_sc = f_sc.strip().split("\t")
         f_sc_bam = f_sc[0]
 
-        
+        if read_extract_sequences_func is None:
+            extracted_reads = read_extract(
+                f_sc_bam, dict_ref, k=3, dmrs=dmrs,
+                ncores=n_cores, methyl_caller=methyl_caller
+            )
+        else:
+            # custom function
+            extracted_reads = read_extract_sequences_func(
+                f_sc_bam, dict_ref, k=3, dmrs=dmrs,
+                ncores=n_cores, methyl_caller=methyl_caller
+            )
 
-        extracted_reads = read_extract(f_sc_bam, dict_ref, k=3, dmrs=dmrs, ncores=n_cores, methyl_caller=methyl_caller)
         if extracted_reads is None:
             continue
 
@@ -279,35 +308,72 @@ def finetune_data_generate(
         else:
         '''
         if len(f_sc) > 1:
-            print(f"{f_sc_bam} processing ({f_sc[1]})...")
+            if verbose > 1:
+                print(f"{f_sc_bam} processing ({f_sc[1]})...")
             extracted_reads["ctype"] = f_sc[1]
         else:
             extracted_reads["ctype"] = "NA"
         extracted_reads = extracted_reads.rename(columns={"RF":"dna_seq", "ME":"methyl_seq"})
 
         if(extracted_reads.shape[0] > 0):
+            filename = os.path.basename(f_sc_bam)
+            files_lbl_map[filename] = f_sc[1]  # label of the file
+            extracted_reads["filename"] = filename
             df_reads.append(extracted_reads)
+
+        tqdm_bar.update()
 
     # Integrate all reads and shuffle
     if len(df_reads) > 0:
-        df_reads = pd.concat(df_reads, ignore_index=True).sample(frac=1).reset_index(drop=True) # sample is for shuffling
-        print("Fine-tuning data generated:", df_reads.head())
+        df_reads = pd.concat(df_reads, ignore_index=True) \
+            .sample(frac=1) \
+            .reset_index(drop=True) # sample is for shuffling
+        if verbose > 1:
+            print("Fine-tuning data generated:", df_reads.head())
     else:
         ValueError("Could not find any reads overlapping with the given DMRs. Please try different regions.")
 
-    print("Total sequences per cell type")
-    print(df_reads["ctype"].value_counts())
-    # Split the data into train and valid/test
-    if (split_ratio < 1.0) and (split_ratio > 0.0):
-        fp_train_seq = os.path.join(output_dir, "train_seq.csv")
-        fp_test_seq = os.path.join(output_dir, "test_seq.csv")
-        n_train = int(df_reads.shape[0]*split_ratio)
-        print("Size - train %d seqs , valid %d seqs "%(n_train, df_reads.shape[0] - n_train))
+    if verbose > 1:
+        print("Total sequences per cell type")
+        print(df_reads["ctype"].value_counts())
 
-        # Write train & test files
-        df_reads.loc[:n_train,:].to_csv(fp_train_seq, sep="\t", header=True, index=None)
-        df_reads.loc[n_train:,:].to_csv(fp_test_seq, sep="\t", header=True, index=None)
+    # Split the data into train and train/valid/test by patient/bam file
+    if np.sum(split_ratios) == 1 and len(split_ratios) == 3:
+        fp_train_seq = os.path.join(output_dir, "train_seq.csv")
+        fp_val_seq = os.path.join(output_dir, "val_seq.csv")
+        fp_test_seq = os.path.join(output_dir, "test_seq.csv")
+
+        val_test_size = 1 - split_ratios[0]
+        train_files, test_files = train_test_split(
+            list(files_lbl_map.keys()),
+            test_size=val_test_size, random_state=seed,
+            stratify=list(files_lbl_map.values())
+        )
+
+        test_size = split_ratios[2] / (split_ratios[1] + split_ratios[2])
+        val_files, test_files = train_test_split(
+            test_files,
+            test_size=test_size, random_state=seed,
+            stratify=[files_lbl_map[e] for e in test_files]
+        )
+
+        # TODO: we should somehow account for ctype stratification
+
+        # Write train & test files (adding a final column because of sep="\t")
+        df_reads["non_null_col"] = ""
+        df_reads.loc[df_reads["filename"].isin(train_files), :] \
+            .to_csv(fp_train_seq, sep="\t", header=True, index=None)
+        df_reads.loc[df_reads["filename"].isin(val_files), :] \
+            .to_csv(fp_val_seq, sep="\t", header=True, index=None)
+        df_reads.loc[df_reads["filename"].isin(test_files), :] \
+            .to_csv(fp_test_seq, sep="\t", header=True, index=None)
+
+        if verbose > 0:
+            print("Size - train %d seqs , valid %d seqs "%(df_reads.loc[df_reads["filename"].isin(train_files), :].shape[0],
+                                                           df_reads.loc[df_reads["filename"].isin(test_files), :].shape[0]))
+
     else:
         fp_data_seq = os.path.join(output_dir, "data.csv")
         df_reads.to_csv(fp_data_seq, sep="\t", header=True, index=None)
 
+    return df_reads
