@@ -16,18 +16,19 @@ bioRxiv 2023.10.29.564590; doi: https://doi.org/10.1101/2023.10.29.564590
 ## Installation
 _MethylBERT_ runs most stably with __Python=3.9__
 
-### Pip Installation 
+### Pip Installation
 _MethylBERT_ is available as a [python package](https://pypi.org/project/methylbert/).
 ```
-conda create -n methylbert -c conda-forge python=3.9 cudatoolkit==11.1.1 pip freetype-py
+conda create -n methylbert -c conda-forge python=3.11 cudatoolkit==11.8 pip freetype-py
 conda activate methylbert
 pip install methylbert
 ```
 
 ### Manual Installation
-You can set up your conda environment with the `setup.py` file. 
+You can set up your conda environment with the `environment.yml` file by
+ running `conda env create --file environment.yml` or instead:
 ```
-conda create -n methylbert -c conda-forge python=3.9 cudatoolkit==11.1.1 pip freetype-py
+conda create -n methylbert -c conda-forge python=3.11 cudatoolkit==11.8 pip freetype-py
 conda activate methylbert
 git clone https://github.com/hanyangii/methylbert.git
 cd methylbert
@@ -41,8 +42,8 @@ If you want to use _MethylBERT_ as a python library, please follow the [tutorial
 ### Command line
 MethylBERT supports a command line tool. Before using the command line tool, please check [the input file requirements](https://github.com/hanyangii/methylbert/blob/main/tutorials/01_Data_Preparation.md)
 ```
-> methylbert 
-MethylBERT v2.0.0
+> methylbert
+MethylBERT v2.0.1
 One option must be given from ['preprocess_finetune', 'finetune', 'deconvolute']
 ```
 `-h` or `--help` provides available arguments for each function. (e.g., `methylbert preprocess_finetune --help`)
