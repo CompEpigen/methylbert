@@ -1,6 +1,6 @@
 [project]
 name = "methylbert"
-version = "1.0.0"
+version = "2.0.1"
 description = "A Transformer-based model for read-level DNA methylation pattern identification and tumour deconvolution"
 authors = [
     { name = "Yunhee Jeong", email = "y.jeong@dkfz-heidelberg.de" }
