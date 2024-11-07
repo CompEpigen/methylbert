@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "methylbert"
 version = "2.0.1"
@@ -5,6 +9,8 @@ description = "A Transformer-based model for read-level DNA methylation pattern 
 authors = [
     { name = "Yunhee Jeong", email = "y.jeong@dkfz-heidelberg.de" }
 ]
+readme = "README.md"
+license = {file = "LICENSE"}
 
 dependencies = [
     "biopython==1.84",
@@ -24,8 +30,8 @@ dependencies = [
 requires-python = ">=3.11"
 
 [tool.setuptools.packages.find]
-where = ["src", "test"]
-include = ["code*"]
+where = ["src"]
+include = ["methylbert*"]
 exclude = []
 
 [tool.setuptools.package-data]
@@ -35,6 +41,3 @@ recipe = ["*.py"]
 [project.entry-points.console_scripts]
 methylbert = "cli:main"
 
-[build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
