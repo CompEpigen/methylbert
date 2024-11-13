@@ -63,7 +63,7 @@ def grid_search(logits, margins, n_grid, verbose=True):
 		pbar.close()
 
 	# Fisher info calculation
-	fi = np.var([grid[0, f+1] -  grid[0, f] * n_grid for f in range(n_grid-1)])
+	fi = np.var([grid[0, f+1] -  grid[0, f] for f in range(n_grid-1)])
 	argmax_idx = np.argmax(grid, axis=1)
 	estimates =  float(argmax_idx)*(1/n_grid)
 	return [estimates, 1-estimates], fi, grid[0, argmax_idx]
