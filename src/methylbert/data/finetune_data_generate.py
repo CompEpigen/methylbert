@@ -226,12 +226,12 @@ def finetune_data_generate(
         if verbose > 0:
             print("DMRs sorted by areaStat")
         dmrs["abs_areaStat"]  = dmrs["areaStat"].abs()
-        dmrs = dmrs.sort_values(by="areaStat", ascending=False)
+        dmrs = dmrs.sort_values(by="abs_areaStat", ascending=False)
     elif "diff.Methy" in dmrs.keys():
         if verbose > 0:
             print("DMRs sorted by diff.Methy")
         dmrs["abs_diff.Methy"]  = dmrs["diff.Methy"].abs()
-        dmrs = dmrs.sort_values(by="diff.Methy", ascending=False)
+        dmrs = dmrs.sort_values(by="abs_diff.Methy", ascending=False)
     else:
         if verbose > 0:
             print("Could not find any statistics to sort DMRs")
@@ -317,7 +317,8 @@ def finetune_data_generate(
 
         if(extracted_reads.shape[0] > 0):
             filename = os.path.basename(f_sc_bam)
-            files_lbl_map[filename] = f_sc[1]  # label of the file
+            if len(f_sc) > 1:
+                files_lbl_map[filename] = f_sc[1]  # label of the file
             extracted_reads["filename"] = filename
             df_reads.append(extracted_reads)
 
