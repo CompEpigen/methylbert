@@ -14,7 +14,7 @@ Yunhee Jeong, Karl Rohr, Pavlo Lutsik,
 bioRxiv 2023.10.29.564590; doi: https://doi.org/10.1101/2023.10.29.564590
 
 ## Installation
-_MethylBERT_ runs most stably with __Python=3.9__
+_MethylBERT_ runs most stably with __Python=3.11__
 
 ### Pip Installation
 _MethylBERT_ is available as a [python package](https://pypi.org/project/methylbert/).
