@@ -424,7 +424,8 @@ class MethylBertFinetuneTrainer(MethylBertTrainer):
                 loss = mask_lm_output["loss"].mean().item() if "cuda" in self.device.type else mask_lm_output["loss"].item()
                 mean_loss += loss/len(data_loader)
 
-                torch.cuda.synchronize()
+                if self._config.with_cuda and torch.cuda.device_count() > 1:
+                    torch.cuda.synchronize()
 
                 predict_res["dmr_label"].append(data["dmr_label"].detach().cpu())
                 predict_res["pred_ctype_label"].append(torch.argmax(mask_lm_output["classification_logits"], dim=-1).detach().cpu())
