@@ -8,11 +8,11 @@ BERT model to classify read-level DNA methylation data into tumour/normal and pe
 _MethylBERT_ is implemented using [pytorch](https://pytorch.org/) and [transformers](https://huggingface.co/docs/transformers/index) 🤗.
 
 ## Paper
-_MethylBERT_ paper is now online on [__bioRxiv__](https://www.biorxiv.org/content/10.1101/2023.10.29.564590v1)!!
+_MethylBERT_ paper is now online on [__Nature Communications__](https://www.nature.com/articles/s41467-025-55920-z#article-info)!!
 
-MethylBERT: A Transformer-based model for read-level DNA methylation pattern identification and tumour deconvolution,
-Yunhee Jeong, Karl Rohr, Pavlo Lutsik,
-bioRxiv 2023.10.29.564590; doi: https://doi.org/10.1101/2023.10.29.564590
+__MethylBERT enables read-level DNA methylation pattern identification and tumour deconvolution using a Transformer-based model__
+
+Yunhee Jeong, Clarissa Gerhäuser, Guido Sauter, Thorsten Schlomm, Karl Rohr and Pavlo Lutsik 
 
 ## Installation
 _MethylBERT_ runs most stably with __Python=3.11__
@@ -143,15 +143,14 @@ One option must be given from ['preprocess_finetune', 'finetune', 'deconvolute']
 ```
 ## Citation
 ```
-@article {Jeong2023methyl,
-	author = {Jeong, Yunhee and Gerh{\"a}user, Clarissa and Sauter, Guido and Schlomm, Thorsten and Rohr, Karl and Lutsik, Pavlo},
-	title = {MethylBERT: A Transformer-based model for read-level DNA methylation pattern identification and tumour deconvolution},
-	elocation-id = {2023.10.29.564590},
-	year = {2024},
-	doi = {10.1101/2023.10.29.564590},
-	publisher = {Cold Spring Harbor Laboratory},
-	URL = {https://www.biorxiv.org/content/early/2024/08/29/2023.10.29.564590},
-	eprint = {https://www.biorxiv.org/content/early/2024/08/29/2023.10.29.564590.full.pdf},
-	journal = {bioRxiv}
+@article{jeong2025methylbert,
+  title={MethylBERT enables read-level DNA methylation pattern identification and tumour deconvolution using a Transformer-based model},
+  author={Jeong, Yunhee and Gerh{\"a}user, Clarissa and Sauter, Guido and Schlomm, Thorsten and Rohr, Karl and Lutsik, Pavlo},
+  journal={Nature Communications},
+  volume={16},
+  number={1},
+  pages={788},
+  year={2025},
+  publisher={Nature Publishing Group UK London}
 }
 ```
