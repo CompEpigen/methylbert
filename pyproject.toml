@@ -7,7 +7,8 @@ name = "methylbert"
 version = "2.0.1"
 description = "A Transformer-based model for read-level DNA methylation pattern identification and tumour deconvolution"
 authors = [
-    { name = "Yunhee Jeong", email = "y.jeong@dkfz-heidelberg.de" }
+    { name = "Yunhee Jeong", 
+      email = "y.jeong@dkfz-heidelberg.de" }
 ]
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -32,12 +33,11 @@ requires-python = ">=3.11"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["methylbert*"]
-exclude = []
+exclude = ["methylbert/cli.py"]
 
 [tool.setuptools.package-data]
 "test" = ["*"]
 recipe = ["*.py"]
 
 [project.entry-points.console_scripts]
-methylbert = "cli:main"
-
+methylbert = "methylbert.cli:main"
