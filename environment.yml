@@ -1,0 +1,11 @@
+# run: conda env create --file environment.yml
+name: methylbert
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.11
+  - cudatoolkit=11.8
+  - pip
+  - pip:
+    - -e .

@@ -8,27 +8,28 @@ BERT model to classify read-level DNA methylation data into tumour/normal and pe
 _MethylBERT_ is implemented using [pytorch](https://pytorch.org/) and [transformers](https://huggingface.co/docs/transformers/index) 🤗.
 
 ## Paper
-_MethylBERT_ paper is now online on [__bioRxiv__](https://www.biorxiv.org/content/10.1101/2023.10.29.564590v1)!!
+_MethylBERT_ paper is now online on [__Nature Communications__](https://www.nature.com/articles/s41467-025-55920-z#article-info)!!
 
-MethylBERT: A Transformer-based model for read-level DNA methylation pattern identification and tumour deconvolution,
-Yunhee Jeong, Karl Rohr, Pavlo Lutsik,
-bioRxiv 2023.10.29.564590; doi: https://doi.org/10.1101/2023.10.29.564590
+__MethylBERT enables read-level DNA methylation pattern identification and tumour deconvolution using a Transformer-based model__
+
+Yunhee Jeong, Clarissa Gerhäuser, Guido Sauter, Thorsten Schlomm, Karl Rohr and Pavlo Lutsik 
 
 ## Installation
-_MethylBERT_ runs most stably with __Python=3.9__
+_MethylBERT_ runs most stably with __Python=3.11__
 
-### Pip Installation 
+### Pip Installation
 _MethylBERT_ is available as a [python package](https://pypi.org/project/methylbert/).
 ```
-conda create -n methylbert -c conda-forge python=3.9 cudatoolkit==11.1.1 pip freetype-py
+conda create -n methylbert -c conda-forge python=3.11 cudatoolkit==11.8 pip freetype-py
 conda activate methylbert
 pip install methylbert
 ```
 
 ### Manual Installation
-You can set up your conda environment with the `setup.py` file. 
+You can set up your conda environment with the `environment.yml` file by
+ running `conda env create --file environment.yml` or instead:
 ```
-conda create -n methylbert -c conda-forge python=3.9 cudatoolkit==11.1.1 pip freetype-py
+conda create -n methylbert -c conda-forge python=3.11 cudatoolkit==11.8 pip freetype-py
 conda activate methylbert
 git clone https://github.com/hanyangii/methylbert.git
 cd methylbert
@@ -42,8 +43,8 @@ If you want to use _MethylBERT_ as a python library, please follow the [tutorial
 ### Command line
 MethylBERT supports a command line tool. Before using the command line tool, please check [the input file requirements](https://github.com/hanyangii/methylbert/blob/main/tutorials/01_Data_Preparation.md)
 ```
-> methylbert 
-MethylBERT v2.0.0
+> methylbert
+MethylBERT v2.0.1
 One option must be given from ['preprocess_finetune', 'finetune', 'deconvolute']
 ```
 `-h` or `--help` provides available arguments for each function. (e.g., `methylbert preprocess_finetune --help`)
@@ -142,15 +143,14 @@ One option must be given from ['preprocess_finetune', 'finetune', 'deconvolute']
 ```
 ## Citation
 ```
-@article {Jeong2023methyl,
-	author = {Jeong, Yunhee and Gerh{\"a}user, Clarissa and Sauter, Guido and Schlomm, Thorsten and Rohr, Karl and Lutsik, Pavlo},
-	title = {MethylBERT: A Transformer-based model for read-level DNA methylation pattern identification and tumour deconvolution},
-	elocation-id = {2023.10.29.564590},
-	year = {2024},
-	doi = {10.1101/2023.10.29.564590},
-	publisher = {Cold Spring Harbor Laboratory},
-	URL = {https://www.biorxiv.org/content/early/2024/08/29/2023.10.29.564590},
-	eprint = {https://www.biorxiv.org/content/early/2024/08/29/2023.10.29.564590.full.pdf},
-	journal = {bioRxiv}
+@article{jeong2025methylbert,
+  title={MethylBERT enables read-level DNA methylation pattern identification and tumour deconvolution using a Transformer-based model},
+  author={Jeong, Yunhee and Gerh{\"a}user, Clarissa and Sauter, Guido and Schlomm, Thorsten and Rohr, Karl and Lutsik, Pavlo},
+  journal={Nature Communications},
+  volume={16},
+  number={1},
+  pages={788},
+  year={2025},
+  publisher={Nature Publishing Group UK London}
 }
 ```
