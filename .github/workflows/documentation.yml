@@ -1,27 +1,24 @@
 name: gh-pages
 
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [gh-pages] # branch to trigger deployment
 
-permissions:
-  contents: write
+# Cancel any in-progress job or run
+# https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#concurrency
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  docs:
+  pages:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-      - name: Install dependencies
-        run: |
-          pip install sphinx sphinx_rtd_theme myst_parser
-      - name: Sphinx build
-        run: |
-          sphinx-build docs _build
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        with:
-          publish_branch: gh-pages
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: _build/
-          force_orphan: true
+    - id: deployment
+      uses: sphinx-notes/pages@v3
+      with:
+        publish: false
+    - uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ${{ steps.deployment.outputs.artifact }}
