@@ -1,22 +1,21 @@
-Welcome to Lumache's documentation!
-===================================
+.. methylbert documentation master file, created by
+   sphinx-quickstart on Wed Mar  5 20:35:11 2025.
+   You can adapt this file completely to your liking, but it should at least
+   contain the root `toctree` directive.
 
-**Lumache** (/lu'make/) is a Python library for cooks and food lovers
-that creates recipes mixing random ingredients.
-It pulls data from the `Open Food Facts database <https://world.openfoodfacts.org/>`_
-and offers a *simple* and *intuitive* API.
+MethylBERT documentation
+========================
 
-Check out the :doc:`usage` section for further information, including
-how to :ref:`installation` the project.
-
-.. note::
-
-   This project is under active development.
-
-Contents
---------
+.. image:: imgs/introduction_methylbert.png
+  :width: 600
+  :alt: MethylBERT pipeline
 
 .. toctree::
+   :maxdepth: 1
+   :caption: Contents:
 
-   usage
-   api
+   tutorials/01_Data_Preparation.md
+   tutorials/02_Preprocessing_training_data.md
+   tutorials/03_Preprocessing_bulk_data.md
+   tutorials/04_Fine-tuning_MethylBERT_model.md
+   tutorials/05_tumour_deconvolution.md
