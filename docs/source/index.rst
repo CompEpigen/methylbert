@@ -30,11 +30,9 @@ Publication
 Yunhee Jeong, Clarissa Gerhäuser, Guido Sauter, Thorsten Schlomm, Karl Rohr and Pavlo Lutsik 
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
    :caption: Contents
 
-   tutorials/01_Data_Preparation.md
-   tutorials/02_Preprocessing_training_data.md
-   tutorials/03_Preprocessing_bulk_data.md
-   tutorials/04_Fine-tuning_MethylBERT_model.md
-   tutorials/05_tumour_deconvolution.md
+   Data Preparation <tutorials/01_Data_Preparation.md>
+   lib_entry.md
+   cmd_entry.md
