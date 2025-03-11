@@ -38,7 +38,7 @@ pip3 install .
 
 ## Quick start
 ### Python library
-If you want to use _MethylBERT_ as a python library, please follow the [tutorials](https://github.com/hanyangii/methylbert/tree/main/tutorials).
+If you want to use _MethylBERT_ as a python library, please follow the [tutorials](https://methylbert.readthedocs.io/en/latest/).
 
 ### Command line
 MethylBERT supports a command line tool. Before using the command line tool, please check [the input file requirements](https://github.com/hanyangii/methylbert/blob/main/tutorials/01_Data_Preparation.md)
