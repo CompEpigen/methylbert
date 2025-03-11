@@ -6,8 +6,9 @@ import numpy as np
 import math, os
 from copy import deepcopy
 
-from transformers import BertPreTrainedModel, BertModel, BertForMaskedLM, BertConfig
+from transformers import BertPreTrainedModel, BertModel, BertForMaskedLM
 from methylbert.function import FocalLoss 
+from methylbert.config import MethylBERTConfig
 
 METHYLBERT_PRETRAINED_MODEL_ARCHIVE_MAP = {
     "hanyangii/methylbert_hg19_12l": "https://huggingface.co/hanyangii/methylbert_hg19_12l/resolve/main/pytorch_model.bin",
@@ -16,17 +17,6 @@ METHYLBERT_PRETRAINED_MODEL_ARCHIVE_MAP = {
     "hanyangii/methylbert_hg19_4l": "https://huggingface.co/hanyangii/methylbert_hg19_4l/resolve/main/pytorch_model.bin",
     "hanyangii/methylbert_hg19_2l": "https://huggingface.co/hanyangii/methylbert_hg19_2l/resolve/main/pytorch_model.bin",
 }
-METHYLBERT_PRETRAINED_CONFIG_ARCHIVE_MAP = {
-    "hanyangii/methylbert_hg19_12l": "https://huggingface.co/hanyangii/methylbert_hg19_12l/raw/main/config.json",
-    "hanyangii/methylbert_hg19_8l": "https://huggingface.co/hanyangii/methylbert_hg19_8l/raw/main/config.json",
-    "hanyangii/methylbert_hg19_6l": "https://huggingface.co/hanyangii/methylbert_hg19_6l/raw/main/config.json",
-    "hanyangii/methylbert_hg19_4l": "https://huggingface.co/hanyangii/methylbert_hg19_4l/raw/main/config.json",
-    "hanyangii/methylbert_hg19_2l": "https://huggingface.co/hanyangii/methylbert_hg19_2l/raw/main/config.json"
-}
-
-class MethylBERTConfig(BertConfig):
-    pretrained_config_archive_map = METHYLBERT_PRETRAINED_CONFIG_ARCHIVE_MAP
-    loss="bce"
 
 class MethylBertEmbeddedDMR(BertPreTrainedModel):
     pretrained_model_archive_map = METHYLBERT_PRETRAINED_MODEL_ARCHIVE_MAP
@@ -38,8 +28,8 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
         super().__init__(config)
         self.num_labels = config.num_labels
 
-        if config.loss not in ["bce", "focal_bce", "downsample_bce"]:
-            raise ValueError(f"loss must be bce, focal_bce or downsample_bce. {config.loss} is given.")
+        if config.loss not in ["bce", "focal_bce"]:
+            raise ValueError(f"loss must be bce or focal_bce. {config.loss} is given.")
 
         self.loss = config.loss
         self.classification_loss_fct = self._setup_loss(self.loss)
@@ -58,7 +48,7 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
         self.dmr_encoder = nn.Sequential(
             nn.Embedding(num_embeddings=self.num_labels, embedding_dim = seq_len+1),
         )
-
+        
         self.init_weights()
 
     def _setup_loss(self, loss):
@@ -93,6 +83,7 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
         labels=None,
         ctype_label=None
     ):
+
         outputs = self.bert(
             input_ids,
             attention_mask=attention_mask,
@@ -113,7 +104,7 @@ class MethylBertEmbeddedDMR(BertPreTrainedModel):
         ctype_logits = self.read_classifier(sequence_output.view(-1,(self.seq_len+1)*769))
         
         loss = self.classification_loss_fct(ctype_logits.view(-1, 2), 
-        nn.functional.one_hot(ctype_label, num_classes=2).to(torch.float32).view(-1, 2))
+                                            F.one_hot(ctype_label, num_classes=2).to(torch.float32).view(-1, 2))
         ctype_logits = ctype_logits.softmax(dim=1)
 
         outputs = {"loss": loss,

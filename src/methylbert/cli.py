@@ -9,11 +9,17 @@ from methylbert.trainer import MethylBertFinetuneTrainer
 from methylbert.data.vocab import MethylVocab
 from methylbert.data.dataset import MethylBertFinetuneDataset
 from methylbert.utils import set_seed
-from methylbert.deconvolute import grid_search, grid_search_regions, deconvolute
+from methylbert.deconvolute import deconvolute
 from methylbert import __version__
 
 import torch
 from torch.utils.data import DataLoader
+
+OPTIONS = [
+	"preprocess_finetune", 
+	"finetune", 
+	"deconvolute"
+]
 
 def deconvolute_arg_parser(subparsers):
 	parser = subparsers.add_parser('deconvolute', help='Run MethylBERT tumour deconvolution')
@@ -38,7 +44,8 @@ def finetune_arg_parser(subparsers):
 
 	# For a pre-trained model
 	parser.add_argument("-p", "--pretrain", type=str, default=None, help="path to the saved pretrained model to restore")
-	parser.add_argument("-l", "--n_encoder", type=int, default=None, help="number of encoder blocks. One of [12, 8, 6] need to be given. A pre-trained MethylBERT model is downloaded accordingly. Ignored when -p (--pretrain) is given.")
+	parser.add_argument("-l", "--n_encoder", type=int, default=None, help="number of encoder blocks. One of [12, 8, 6, 4, 2] need to be given. A pre-trained MethylBERT model is downloaded accordingly. Ignored when -p (--pretrain) is given.")
+	parser.add_argument("--without_pretrain", default=False, action="store_true", help="Use MethylBERT without a pre-trained model.")
 	
 	# Hyperparams for input data processing
 	parser.add_argument("-nm", "--n_mers", type=int, default=3, help="n-mers (default: 3)")
@@ -48,7 +55,7 @@ def finetune_arg_parser(subparsers):
 	parser.add_argument("--corpus_lines", type=int, default=None, help="total number of lines in corpus")
 	
 	# Hyperparams for training
-	parser.add_argument("--loss", type=str, default="bce", help="Loss function for fine-tuning (default: bce)")
+	parser.add_argument("--loss", type=str, default="bce", help="Loss function for fine-tuning. It can be either \'bce\' or \'focal_bce\' (default: bce)")
 	parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Max gradient norm (default: 1.0)")
 	parser.add_argument(
 		"--gradient_accumulation_steps",
@@ -60,7 +67,7 @@ def finetune_arg_parser(subparsers):
 	parser.add_argument("--save_freq", type=int, default=None, help="Steps to save the interim model")
 	parser.add_argument("-w", "--num_workers", type=int, default=20, help="dataloader worker size (default: 20)")
 
-	parser.add_argument("--with_cuda", type=bool, default=True, help="training with CUDA: true, or false (default: True)")
+	parser.add_argument("--with_cuda", default=False, action="store_true", help="training with CUDA (GPU)")
 	parser.add_argument("--log_freq", type=int, default=100, help="Frequency (steps) to print the loss values (default: 100)")
 	parser.add_argument("--eval_freq", type=int, default=10, help="Evaluate the model every n iter (default: 10)")
 	parser.add_argument("--lr", type=float, default=4e-4, help="learning rate of adamW (default: 4e-4)")
@@ -80,7 +87,7 @@ def preprocess_finetune_arg_parser(subparsers):
 	parser.add_argument("-s", "--sc_dataset", required=False, default=None, type=str, help="a file all single-cell bam files are listed up. The first and second columns must indicate file names and cell types if cell types are given. Otherwise, each line must have one file path.")
 	parser.add_argument("-f", "--input_file", required=False, default=None, type=str, help=".bam file to be processed")
 	parser.add_argument("-d", "--f_dmr", required=True, type=str, help=".bed or .csv file DMRs information is contained")
-	parser.add_argument("-o", "--output_dir", required=True, type=str, help="a directory where all generated results will be saved")
+	parser.add_argument("-o", "--output_path", required=True, type=str, help="a directory where all generated results will be saved")
 	parser.add_argument("-r", "--f_ref", required=True, type=str, help=".fasta file containing reference genome")
 
 	parser.add_argument("-nm", "--n_mers", type=int, default=3, help="K for K-mer sequences (default: 3)")
@@ -89,19 +96,9 @@ def preprocess_finetune_arg_parser(subparsers):
 	parser.add_argument("-nd", "--n_dmrs", type=int, default=-1, help="Number of DMRs to take from the dmr file. If the value is not given, all DMRs will be used")
 	parser.add_argument("-c", "--n_cores", type=int, default=1, help="number of cores for the multiprocessing (default: 1)")
 	parser.add_argument("--seed", type=int, default=950410, help="random seed number (default: 950410)")
-	parser.add_argument("--ignore_sex_chromo", type=bool, default=True, help="Whether DMRs at sex chromosomes (chrX and chrY) will be ignored (default: True)")
+	parser.add_argument("--ignore_sex_chromo", default=False, action="store_true", help="Whether DMRs at sex chromosomes (chrX and chrY) will be ignored")
 
 def run_finetune(args):
-	# Set up pre-trained model
-	if ( args.pretrain is None ) and ( args.n_encoder is None ):
-		raise ValueError("Either -p (--pretrain) or -l (--n_encoder) need to be given to find a pre-trained model.")
-	elif args.pretrain is None:
-		print(f"Pre-trained MethylBERT model for {args.n_encoder} encoder blocks is selected.")
-		args.pretrain = f"hanyangii/methylbert_hg19_{args.n_encoder}l"
-
-
-	if not os.path.exists(args.output_path):
-		os.mkdir(args.output_path)
 
 	with open(args.output_path+"/train_param.txt", "w") as f_param:
 		dict_args = vars(args)
@@ -145,7 +142,7 @@ def run_finetune(args):
 	if args.valid_batch < 0:
 		args.valid_batch = args.batch_size
 
-	test_data_loader = DataLoader(test_dataset, batch_size=args.valid_batch, num_workers=args.num_workers, pin_memory=True,  shuffle=False) if test_dataset is not None else None
+	test_data_loader = DataLoader(test_dataset, batch_size=args.valid_batch, num_workers=args.num_workers, pin_memory=True,  shuffle=False) if args.test_dataset is not None else None
 
 	# BERT train
 	print("Creating BERT Trainer")
@@ -164,8 +161,21 @@ def run_finetune(args):
 						  save_freq=args.save_freq, 
 						  loss=args.loss)
 
-	# Load pre-trained model
-	trainer.load(args.pretrain)
+	if not args.without_pretrain:
+		# Set up pre-trained model
+		if ( args.pretrain is None ) and ( args.n_encoder is None ):
+			raise ValueError("Either -p (--pretrain) or -l (--n_encoder) need to be given to find a pre-trained model.")
+		elif args.pretrain is None:
+			print(f"Pre-trained MethylBERT model for {args.n_encoder} encoder blocks is selected.")
+			args.pretrain = f"hanyangii/methylbert_hg19_{args.n_encoder}l"
+
+		# Load pre-trained model
+		trainer.load(args.pretrain)
+	else:
+		# Download the config file for the given n_encoder
+		if args.n_encoder is None:
+			raise ValueError("Please give the number of BERT encoder blocks to use with -l option")
+		trainer.create_model(config_file=f"hanyangii/methylbert_hg19_{args.n_encoder}l")
 	
 	# Fine-tune
 	print("Training Start")
@@ -200,13 +210,21 @@ def run_deconvolute(args):
 	restore_dir = os.path.join(args.model_dir, "bert.model/")
 	trainer = MethylBertFinetuneTrainer(len(tokenizer), save_path='./test',
 										train_dataloader=data_loader, 
-										test_dataloader=data_loader,
+										test_dataloader=data_loader
 										)
-	trainer.load(restore_dir, load_fine_tune=True)
+	
+	df_train = pd.read_csv(params["train_dataset"], sep="\t")
+	n_dmrs = max(len(df_train["dmr_label"].unique()), 
+				 df_train["dmr_label"].max()+1 # same as 'def num_dmrs()' in data/dataset.py 
+				 )
+
+	trainer.load(restore_dir, 
+				 load_fine_tune=True, 
+				 n_dmrs=int(n_dmrs) # transformer from_pretrained does not accept np.int
+				 )
 	print("Trained model (%s) is restored"%restore_dir)
 	# Calculate margins
-	df_train = pd.read_csv(params["train_dataset"], sep="\t")
-
+	
 	deconvolute(trainer = trainer, 
 			data_loader = data_loader, 
 			df_train = df_train, 
@@ -215,64 +233,10 @@ def run_deconvolute(args):
 			n_grid = 10000, 
 			adjustment = args.adjustment)
 
-	'''
-	# Read classification
-	total_res, logits = trainer.read_classification(data_loader=data_loader,
-												tokenizer=tokenizer,
-												logit=True)
-	print(total_res, logits)
-
-	# Save the classification results 
-	total_res["P_ctype"] = logits[:,1]
-	total_res.to_csv(args.output_path+"/res.csv", sep="\t", header=True, index=False)
-	if args.save_logit:
-		with open(args.output_path+"/test_classification_logit.pk", "wb") as fp:
-			pk.dump(logits, fp)
-
-	total_res["n_cpg"]=[sum(np.array([int(mm) for mm in m])<2) for m in total_res["methyl_seq"]]
 	
-	
-	
-	# Deconvolution
-	unique_ctypes = df_train["ctype"].unique()
-	if total_res["ctype"][0] not in ["N", "T"]:
-		total_res["ctype"] = ["N" if c == "noncancer" else "T" for c in total_res["ctype"]]
-
-	print("UNIQUE ", unique_ctypes)
-
-	# Tumour-normal deconvolution
-	margins = df_train.value_counts("ctype", normalize=True)[["N","T"]].tolist()
-	print("Margins (normal, tumour) : ", margins)
-	print(total_res.head())
-	if ("T" in total_res["ctype"]) and ("N" in total_res["ctype"]):
-		print(total_res.value_counts("ctype", normalize=True)[["N","T"]].tolist(), margins)
-
-	logits = logits[total_res["n_cpg"]>0,]
-	total_res  = total_res[total_res["n_cpg"]>0]
-	
-	if args.adjustment:
-		tumour_pred_ratio, fi, dmr_labels, likelihood, region_pruity, weights =\
-			grid_search_regions(logits=logits, margins=margins, n_grid=10000,regions=total_res["dmr_label"])
-	else:
-		tumour_pred_ratio, fi, likelihood = grid_search(logits=logits, margins=margins, n_grid=10000)
-	
-	print("Deconvolution result: ", tumour_pred_ratio)
-	pd.DataFrame.from_dict({"cell_type":["T", "N"],
-							"pred":tumour_pred_ratio}).to_csv(args.output_path+"/deconvolution.csv", sep="\t", header=True, index=False)
-	if type(fi) is not list:
-		fi = [fi]
-		pd.DataFrame.from_dict({"fi":fi, 
-							    "likelihood": likelihood}).to_csv(args.output_path+"/FI.csv", sep="\t", header=True, index=False)
-	else:
-		pd.DataFrame.from_dict({"dmr_label":dmr_labels, 
-								"fi":fi, 
-								"likelihood": likelihood, 
-								"estimated_purity": region_pruity,
-								"weights": weights}).sort_values("dmr_label").to_csv(args.output_path+"/FI.csv", sep="\t", header=True, index=False)
-	'''
 def run_preprocess(args):
 	finetune_data_generate(f_dmr=args.f_dmr,
-			output_dir=args.output_dir,
+			output_dir=args.output_path,
 			f_ref=args.f_ref,
 			sc_dataset=args.sc_dataset,
 			input_file=args.input_file, 
@@ -289,42 +253,65 @@ def write_args2json(args, f_out):
 	with open(f_out, "w") as fp:
 		json.dump(vars(args), fp)
 
-def main(args=None):
-	print(f"MethylBERT v{__version__}")
-	options = ["preprocess_finetune", "finetune", "deconvolute"]
+def get_args(func):
+	'''
+	get a set of arguments for each MethylBERT function 
+	'''
 	
-	if len(sys.argv) == 1:
-		print(f"One option must be given from {options}")
-		exit()
-
+	# init
 	parser_init = argparse.ArgumentParser("methylbert")
 	subparsers = parser_init.add_subparsers(help="Options for MethylBERT")
-	selected_option =  sys.argv[1]
+	
+	# get args
+	if func == "preprocess_finetune":
+		preprocess_finetune_arg_parser(subparsers)
+	elif func == "finetune":
+		finetune_arg_parser(subparsers)
+	elif func == "deconvolute":
+		deconvolute_arg_parser(subparsers)
+	else:
+		raise ValueError(f"{func} must be one of {OPTIONS}")
 
 	# Configuration file is given
-	if ".json" in sys.argv[2]:
+	if (len(sys.argv) >= 3) and (".json" in sys.argv[2]):
 		f_config = sys.argv[2]
 		with open(f_config, "r") as fp:
 			config_dict = json.load(fp)
-		args = argparse.Namespace(**config_dict)
 
+		args = [func]
+		for k, v in config_dict.items():
+			if ( type(v) == bool ) and (v):
+				args.append(f"--{k}")
+			elif v is not None:
+				args.append(f"--{k}")
+				args.append(f"{v}")
+
+		args = parser_init.parse_args(args)
+	else:
+		# parse args
+		args = parser_init.parse_args()
+	
+		# output configuration in a .json file
+		if not os.path.exists(args.output_path):
+			os.mkdir(args.output_path)
+		write_args2json(args, os.path.join(args.output_path, f"{func}_config.json"))
+
+	return args
+
+def main(args=None):
+	print(f"MethylBERT v{__version__}")
+	
+	if len(sys.argv) == 1:
+		print(f"One option must be given from {OPTIONS}")
+		exit()
+
+	selected_option =  sys.argv[1]
+	args = get_args(selected_option)
+	
+	# Run the function
 	if selected_option == "preprocess_finetune":
-		if args is None:
-			preprocess_finetune_arg_parser(subparsers)
-			args = parser_init.parse_args()
-			write_args2json(args, os.path.join(args.output_dir, "preprocess_finetune_config.json"))
 		run_preprocess(args)
 	elif selected_option == "finetune":
-		if args is None:		
-			finetune_arg_parser(subparsers)
-			args = parser_init.parse_args()
-			write_args2json(args, os.path.join(args.output_path, "finetune_config.json"))
 		run_finetune(args)
 	elif selected_option == "deconvolute":
-		if args is None:		
-			deconvolute_arg_parser(subparsers)
-			args = parser_init.parse_args()
-			write_args2json(args, os.path.join(args.output_path, "deconvolute_config.json"))
 		run_deconvolute(args)
-	else:
-		print(f"The option must be chosen in {options}")
