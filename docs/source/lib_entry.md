@@ -4,7 +4,7 @@ Following this tutorial, you can use _MethylBERT_ as a Python library, meaning t
 
 If you have not prepared data required by _MethylBERT_, please go to the [data preparation tutorial](tutorials/01_Data_Preparation) first.  
 
-## [01. Preprocessing for _MethylBERT_ fine-tuning training data](tutorials/02_Preprocessing_training_data.md)
-## [02. Preprocessing_bulk_data](tutorials/03_Preprocessing_bulk_data.md)
-## [03. Fine-tuning_MethylBERT_model](tutorials/04_Fine-tuning_MethylBERT_model.md)
-## [04. Tumour_deconvolution](tutorials/05_tumour_deconvolution.md)
+## [01. Preprocessing for _MethylBERT_ fine-tuning training data](tutorials/02_Preprocessing_training_data.ipynb)
+## [02. Preprocessing bulk data](tutorials/03_Preprocessing_bulk_data.ipynb)
+## [03. Fine-tuning MethylBERT model](tutorials/04_Fine-tuning_MethylBERT_model.ipynb)
+## [04. Tumour deconvolution](tutorials/05_tumour_deconvolution.ipynb)
